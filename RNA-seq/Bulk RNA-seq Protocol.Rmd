@@ -1,0 +1,882 @@
+---
+title: "Bulk RNA-seq Protocol"
+author: "Chentao LI"
+output: pdf_document
+---
+# Bulk RNA-seq Protocol
+## Bam files to Counts
+Linux operation
+```{}
+# Download bam, bai, GTF files to your path
+# bam: /home/Documents/data/
+# bai: /home/Documents/sorted_data/
+# change path
+cd /home/Documents/data/
+
+# sort
+for file in *.bam; do samtools sort -n "$file" > /home/Documents/sorted_data/"${file%.bam}.bam"; done
+
+# change path to GTF files
+cd /home/Documents/GTF/
+
+# Count
+for file in *.bam; do htseq-count -f bam -r name -s no -a 10 -t exon -i gene_id -m intersection-nonempty "$file" /home/Documents/GTF/GTF.gtf > /home/Documents/sorted_data/"${file%.bam}_counts.txt"; done
+# htseq-count -f bam -s no -i gene_id -t gene -r pos
+
+# Save .txt files to your computer
+```
+
+## Merge Counts to CSV
+```{python}
+import os
+import csv
+
+# 指定文件夹路径
+folder_path = r'D:\data'
+
+# 创建一个字典来存储每个基因的值
+gene_values = {}
+
+# 遍历文件夹内的所有文件
+for file_name in os.listdir(folder_path):
+    if file_name.endswith('.txt'):
+        file_path = os.path.join(folder_path, file_name)
+        
+        # 打开每个txt文件并读取内容
+        with open(file_path, 'r') as txt_file:
+            for line in txt_file:
+                gene, value = line.strip().split('\t')
+                
+                # 将基因名和值存储到字典中
+                gene_values.setdefault(gene, []).append(value)
+
+# 将数据写入到csv文件
+output_file = os.path.join(folder_path, 'merged.csv')
+with open(output_file, 'w', newline='') as csv_file:
+    writer = csv.writer(csv_file)
+    # 删除列名中不想要的内容
+    column_names = [file_name.replace('MPOX_', '').replace('_pass_counts.txt', '') for file_name in os.listdir(folder_path) if file_name.endswith('.txt')]
+    writer.writerow(['Gene'] + column_names)  # 写入列标题
+
+    
+    # 按照基因名的顺序遍历字典，并将值写入到csv文件
+    for gene in sorted(gene_values.keys()):
+        writer.writerow([gene] + gene_values[gene])
+
+print(f"合并完成，结果已保存到 {output_file}")
+```
+
+## Read Counts
+```{r}
+# RNAseqTool::run_app()
+
+library(DESeq2)
+library(pheatmap)
+library(ggplot2)
+
+dir_data="D:/data"
+countData <- as.matrix(read.csv("CSV.csv",row.names="Gene"))
+
+data <- countData[rowMeans(countData)>1,] # 去除表达量过低的基因
+
+# normalize based on DEseq2
+normalized_counts <- counts(dds1, normalized = TRUE)
+output_file <- "normalized_matrix.csv"
+write.csv(normalized_counts, file = output_file, row.names = TRUE)
+
+# scale
+scaled_matrix <- scale(normalized_counts)
+output_file <- "scaled_matrix.csv"
+write.csv(scaled_matrix, file = output_file, row.names = TRUE)
+
+# Group
+type <- factor(c(rep("mock",3),rep("inf_1h",3),
+                 rep("inf_2h",3),rep("inf_4h",3),
+                 rep("inf_6h",3),rep("inf_12h",3),rep("inf_24h",3)))
+colData <- data.frame(row.names=colnames(data), type)
+
+###########################
+# Matrix Group
+normalized_counts_virus <- data.frame()
+normalized_counts_host <- data.frame()
+
+# 遍历每一行，根据基因名称进行分类
+for (i in 1:nrow(normalized_counts)) {
+  gene <- rownames(normalized_counts)[i]
+  
+  # 检查基因名称是否以"MPXV"开头
+  if (startsWith(gene, "MPXV")) {
+    # 将当前行添加到normalized_counts_virus
+    normalized_counts_virus <- rbind(normalized_counts_virus, normalized_counts[i, , drop = FALSE])
+  } else {
+    # 将当前行添加到normalized_counts_host
+    normalized_counts_host <- rbind(normalized_counts_host, normalized_counts[i, , drop = FALSE])
+  }
+}
+```
+
+## Differential Expression Gene Analysis (DEseq2)
+```{r}
+# 开始进行差异表达分析
+dds <- DESeqDataSetFromMatrix(countData = data, colData = colData, design = ~ type)
+dds1 <- DESeq(dds, fitType = 'mean', minReplicatesForReplace = 7, parallel = FALSE) 
+
+#将差异表达分析结果用result()函数来获取
+res <- results(dds1)
+
+# 再将结果储存为表格形式：
+# res格式转化：用data.frame转化为表格形式
+res1 <- data.frame(res, stringsAsFactors = FALSE, check.names = FALSE)
+# 依次按照pvalue值log2FoldChange值进行排序
+res1 <- res1[order(res1$pvalue, res1$log2FoldChange, decreasing = c(FALSE, TRUE)), ]
+
+# 获取padj（p值经过多重校验校正后的值）小于0.05，表达倍数取以2为对数后大于1或者小于-1的差异表达基因。
+res1_up<- res1[which(res1$log2FoldChange >= 1 & res1$pvalue < 0.05),]      # 表达量显著上升的基因
+res1_down<- res1[which(res1$log2FoldChange <= -1 & res1$pvalue < 0.05),]    # 表达量显著下降的基因
+res1_total <- rbind(res1_up,res1_down)
+```
+
+## Differential Expression Gene Analysis (Limma) 
+```{r}
+# 差异分析
+library(limma)
+# exp <- read.csv("D:/OneDrive - International Campus, Zhejiang University/Projects/Lysosome-Autophagy/data/GSE120613_matrix.csv")
+exp <- exprSet_symbol
+Mock=c('Mock_1','Mock_2','Mock_3')
+CPXV_2h=c('CPXV.2h_1', 'CPXV.2h_2', 'CPXV.2h_3')
+CPXV_16h=c('CPXV-16h_1', 'CPXV-16h_2', 'CPXV-16h_3')
+
+index_Mock=which(colnames(exp) %in% Mock)
+index_CPXV2h=which(colnames(exp) %in% CPXV_2h)
+index_CPXV16h=which(colnames(exp) %in% CPXV_16h)
+
+expr_sle <- exp[, c(index_Mock, index_CPXV2h)] # 根据选择的分组取表达矩阵的子集
+groups=factor(c(rep(1,length(index_Mock)),rep(0,length(index_CPXV2h))),
+              levels=c(0,1),labels = c("Mock","CPXV_2h")) # 分组设计
+#首先设置分组矩阵，指明所有sample的分组情况
+design=model.matrix(~0+groups) 
+colnames(design) <- levels(groups)
+
+#然后根据分组进行线性拟合
+fit <- lmFit(expr_sle, design)
+#需要进一步指明差异分析的比较为 CPXV组 VS NK组
+cts <- paste("Mock", "CPXV_2h", sep="-") #注意顺序：前者比上后者
+cont.matrix <- makeContrasts(contrasts=cts, levels=design) #比较矩阵，指明哪两组进行比较
+fit2 <- contrasts.fit(fit, cont.matrix)
+
+#最后得到差异分析结果
+fit2 <- eBayes(fit2, 0.01)
+tT <- topTable(fit2, adjust="fdr", sort.by="p",number=Inf)
+head(tT)
+
+deg <- data.frame(Gene=rownames(tT),P.Value=tT[,"P.Value"],
+                  logFC=tT[,"logFC"],FDR=tT[,"adj.P.Val"])
+
+# 将 probe_id 列按照 symbol 整合到 deg 中
+deg$probe_id <- exp_copy[match(deg$Gene, exp_copy$symbol), "probe_id"]
+#将 deg 数据框中的行名作为新的列 probe_id 添加到 deg
+head(deg)
+
+file_path <- "D:/OneDrive - International Campus, Zhejiang University/Projects/Lysosome-Autophagy/data/GSE120613_limma_2.csv"
+write.csv(deg, file_path)
+```
+
+## PCA
+```{r}
+# 这种方法不如RNAseqTool的好用
+# 对数据进行主成分分析
+pca_result_host <- prcomp(t(normalized_counts_host), scale. = TRUE) # 转置数据矩阵
+
+# 提取主成分分析的结果
+pca_values <- pca_result_host$x  # 主成分分析的得分矩阵
+labels <- colnames(normalized_counts_host)  # 样本标签
+
+# 转换主成分分析的结果为数据框
+pca_data <- as.data.frame(pca_values)
+pca_data$labels <- labels
+
+# 创建散点图
+pca_scatter <- ggplot(data = pca_data, aes(x = PC1, y = PC2)) +
+  geom_point() +
+  geom_text(aes(label = labels), vjust = 1.5) +
+  xlab("PC1") +
+  ylab("PC2") +
+  ggtitle("PCA Scatter Plot")
+print(pca_scatter)
+
+# 将主成分分析的得分矩阵转换为数据框
+pca_data <- as.data.frame(pca_values)
+library(ggrepel)
+pca_scatter <- ggplot(data = pca_data, aes(x = PC1, y = PC2)) +
+  geom_point() +
+  geom_text_repel(aes(label = labels), box.padding = 0.5, point.padding = 0.3, max.overlaps = Inf) +
+  xlab("PC1") +
+  ylab("PC2") +
+  ggtitle("PCA Scatter Plot (Host gene expression)")
+print(pca_scatter)
+
+###########################
+# 对数据进行主成分分析
+pca_result_virus <- prcomp(t(normalized_counts_virus), scale. = TRUE) # 转置数据矩阵
+
+# 提取主成分分析的结果
+pca_values <- pca_result_virus$x  # 主成分分析的得分矩阵
+labels <- colnames(normalized_counts_virus)  # 样本标签
+
+# 将主成分分析的得分矩阵转换为数据框
+pca_data <- as.data.frame(pca_values)
+# 添加样本标签到数据框中
+pca_data$labels <- labels
+library(ggrepel)
+pca_scatter <- ggplot(data = pca_data, aes(x = PC1, y = PC2)) +
+  geom_point() +
+  geom_text_repel(aes(label = labels), box.padding = 0.5, point.padding = 0.3) +
+  xlab("PC1") +
+  ylab("PC2") +
+  ggtitle("PCA Scatter Plot (Viral gene expression)")
+print(pca_scatter)
+```
+
+## Pheatmap
+```{r}
+# Heatmap
+library(pheatmap)
+genes <- c("AMBRA1", "APOL1", "ARNT", "ARSA", "ARSB", "ATF4", "ATF6", "ATG10", "ATG12", "ATG16L1", "ATG16L2", "ATG2A", "ATG2B", "ATG3", "ATG4A", "ATG4B", "ATG4C", "ATG4D", "ATG5", "ATG7", "ATG9A", "ATG9B", "ATIC", "BAG1", "BAG3", "BAK1", "BAX", "BCL2", "BCL2L1", "BECN1", "BID", "BIRC5", "BIRC6", "BNIP1", "BNIP3", "BNIP3L", "C12orf44", "C17orf88", "CALCOCO2", "CAMKK2", "CANX", "CAPN1", "CAPN10", "CAPN2", "CAPNS1", "CASP1", "CASP3", "CASP4", "CASP8", "CCL2", "CCR2", "CD46", "CDKN1A", "CDKN1B", "CDKN2A", "CFLAR", "CHMP2B", "CHMP4B", "CLN3", "CTSB", "CTSD", "CTSL1", "CX3CL1", "CXCR4", "DAPK1", "DAPK2", "DDIT3", "DIRAS3", "DLC1", "DNAJB1", "DNAJB9", "DRAM1", "EDEM1", "EEF2", "EEF2K", "EGFR", "EIF2AK2", "EIF2AK3", "EIF2S1", "EIF4EBP1", "EIF4G1", "ERBB2", "ERN1", "ERO1L", "FADD", "FAM48A", "FAS", "FKBP1A", "FKBP1B", "FOS", "FOXO1", "FOXO3", "GAA", "GABARAP", "GABARAPL1", "GABARAPL2", "GAPDH", "GNAI3", "GNB2L1", "GOPC", "GRID1", "GRID2", "HDAC1", "HDAC6", "HGS", "HIF1A", "HSP90AB1", "HSPA5", "HSPA8", "HSPB8", "IFNG", "IKBKB", "IKBKE", "IL24", "IRGM", "ITGA3", "ITGA6", "ITGB1", "ITGB4", "ITPR1", "GAA", "GABARAP", "GABARAPL1", "GABARAPL2", "GAPDH", "GNAI3", "GNB2L1", "GOPC", "GRID1", "GRID2", "KIAA0226", "KIAA0652", "KIAA0831", "KIF5B", "KLHL24", "LAMP1", "LAMP2", "MAP1LC3A", "MAP1LC3B", "MAP1LC3C", "MAP2K7", "MAPK1", "MAPK3", "MAPK8", "MAPK8IP1", "MAPK9", "MBTPS2", "MLST8", "MTMR14", "MTOR", "MYC", "NAF1", "NAMPT", "NBR1", "NCKAP1", "NFE2L2", "NFKB1", "NKX2-3", "NLRC4", "NPC1", "NRG1", "NRG2", "NRG3", "P4HB", "PARK2", "PARP1", "PEA15", "PELP1", "PEX14", "PEX3", "PIK3C3", "PIK3R4", "PINK1", "PPP1R15A", "PRKAB1", "PRKAR1A", "PRKCD", "PRKCQ", "PTEN", "PTK6", "RAB11A", "RAB1A", "RAB24", "RAB33B", "RAB5A", "RAB7A", "RAC1", "RAF1", "RB1", "RB1CC1", "RELA", "RGS19", "RHEB", "RPS6KB1", "RPTOR", "SAR1A", "SERPINA1", "SESN2", "SH3GLB1", "SIRT1", "SIRT2", "SPHK1", "SPNS1", "SQSTM1", "ST13", "STK11", "TBK1", "TM9SF1", "TMEM49", "TMEM74", "TNFSF10", "TP53", "TP53INP2", "TP63", "TP73", "TSC1", "TSC2", "TUSC1", "ULK1", "ULK2", "ULK3", "USP10", "UVRAG", "VAMP3", "VAMP7", "VEGFA", "WDFY3", "WDR45", "WDR45L", "WIPI1", "WIPI2", "ZFYVE1")
+genes2 <- c('ATF4', 'ATG12', 'BAG3', 'BAX', 'BCL2L1', 'BNIP3L', 'CAPN2', 'CD46', 'CTSB', 'CTSD', 'CTSL1', 'DNAJB1', 'EEF2', 'EIF2S1', 'FKBP1A', 'GABARAPL1', 'GABARAPL2', 'HIF1A', 'HSP90AB1', 'HSPA8', 'HSPA5', 'HSP90AB1', 'ITGB1', 'ITGA3', 'KIF5B', 'LAMP1', 'MAPK1', 'NAMPT', 'NCKAP1', 'P4HB', 'WIPI2', 'VAMP3', 'VEGFA', 'ST13', 'SQSTM1', 'SERPINA1', 'SAR1A', 'RHEB', 'PEA15', 'PRKAR1A', 'RAB11A', 'RAB1A', 'RAB7A', 'RAC1')
+
+data <- read.csv("normalized_matrix.csv")
+rownames(data) <- data$X
+data$X <- NULL
+
+choose_matrix = data[genes2,]
+choose_matrix<-na.omit(choose_matrix) 
+output_file <- "Autophagy-related genesets.csv"
+write.csv(choose_matrix, file = output_file, row.names = TRUE)
+
+choose_matrix <- read.csv("Autophagy-related genesets - Average.csv")
+rownames(choose_matrix) <- choose_matrix$X
+choose_matrix$X <- NULL
+choose_matrix = t(scale(t(choose_matrix)))
+
+pheatmap(choose_matrix, display_numbers = TRUE, cluster_rows = FALSE, cluster_cols = FALSE)
+```
+
+## Average
+```{r}
+# 创建一个新的数据框来存储平均值和行名
+averages <- data.frame(matrix(ncol = length(c('NK','CPXV_2h', 'CPXV_16h')), nrow = nrow(exp)))
+rownames(averages) <- rownames(exprSet_symbol)
+colnames(averages) <- c('NK','CPXV_2h', 'CPXV_16h')
+# 计算指定列的平均值
+averages$NK <- rowMeans(exprSet_symbol[, c(1, 2, 3)])
+averages$CPXV_2h <- rowMeans(exprSet_symbol[, c(4, 5, 6)])
+averages$CPXV_16h <- rowMeans(exprSet_symbol[, c(7, 8, 9)])
+# 设置新数据框的行名
+rownames(averages) <- rownames(exprSet_symbol)
+# 打印修改后的数据框
+print(averages)
+
+# 创建一个新的数据框来存储结果
+modified_data <- averages
+# 将第2、3和4列的值减去第一列的值
+modified_data[, 2:3] <- modified_data[, 2:3] - modified_data[, 1]
+modified_data <- modified_data[, 2:3] # 保留后列
+print(modified_data) # 打印修改后的数据框
+file_path_modified <- "D:/OneDrive - International Campus, Zhejiang University/Projects/Lysosome-Autophagy/data/GSE120613_matrix_modified.csv"
+write.csv(modified_data, file_path_modified)
+
+library(utils)
+file_path <- "D:/OneDrive - International Campus, Zhejiang University/Projects/Lysosome-Autophagy/data/GSE120613_matrix_average.csv"
+write.csv(averages, file_path)
+```
+
+## Correlation
+```{r}
+library(DESeq2)
+# 读取 RNA-seq 表达矩阵数据，数据已经预处理并进行了归一化
+expression_matrix <- read.csv("D:/OneDrive - International Campus, Zhejiang University/Projects/MPXV/normalized_matrix.csv", header = TRUE, row.names = 1)
+# 读取目标基因的表达数据，假设是单个样本的表达值
+target_genes <- read.csv("normalized_matrix - virus.csv", header = TRUE)
+# 创建数据框用于存储基因与目标基因相关性的结果
+correlation_results <- data.frame(Gene = character(),
+                                  Correlation = numeric(),
+                                  stringsAsFactors = FALSE)
+
+# 计算基因之间的相关系数
+correlation_matrix <- cor(t(expression_matrix))
+
+# 计算每个基因与目标基因集合的平均相关系数
+gene_correlation <- rowMeans(correlation_matrix[, rownames(target_genes), drop = FALSE])
+output_file <- "correlation_matrix.csv"
+write.csv(correlation_matrix, file = output_file, row.names = TRUE)
+
+# 创建数据框用于存储基因与目标基因相关性的结果
+correlation_results <- data.frame(Gene = rownames(expression_matrix),
+                                  Correlation = gene_correlation,
+                                  stringsAsFactors = FALSE)
+choose_gene = target_genes$Gene
+correlation_results = correlation_matrix[choose_gene,]
+output_file <- "correlation_results.csv"
+write.csv(correlation_results, file = output_file, row.names = TRUE)
+
+
+correlation_results_MPXV = correlation_results[c("MPXV165", "MPXV178"),]
+correlation_results_MPXV165 = correlation_results_MPXV[1,]
+correlation_results_MPXV178 = correlation_results_MPXV[2,]
+
+selected_columns <- colSums(abs(correlation_results_MPXV) > 0.95) > 0
+filtered_correlation_results_MPXV <- correlation_results_MPXV[, selected_columns]
+
+output_file <- "filtered_correlation_results_MPXV.csv"
+write.csv(filtered_correlation_results_MPXV, file = output_file, row.names = TRUE)
+
+
+# 输出与目标基因相关性最高的基因
+top_genes <- head(correlation_results, n = 10)
+print(top_genes)
+```
+
+# Volcano
+```{r}
+colnames(dif)
+plot(dif$logFC,-log10(dif$P.Value))
+library(ggplot2)
+DEG=dif
+logFC_cutoff <- with(DEG,mean(abs( logFC)) + 2*sd(abs( logFC)) )
+DEG$change = as.factor(ifelse(DEG$P.Value < 0.05 & abs(DEG$logFC) > logFC_cutoff,
+                              ifelse(DEG$logFC > logFC_cutoff ,'UP','DOWN'),'NOT')
+)
+this_tile <- paste0('Cutoff for logFC is ',round(logFC_cutoff,3),
+                    '\nThe number of up gene is ',nrow(DEG[DEG$change =='UP',]) ,
+                    '\nThe number of down gene is ',nrow(DEG[DEG$change =='DOWN',])
+)
+this_tile
+head(DEG)
+g = ggplot(data=DEG, aes(x=logFC, y=-log10(P.Value), color=change)) +
+  geom_point(alpha=0.4, size=1.75) +
+  theme_set(theme_set(theme_bw(base_size=20)))+
+  xlab("log2 fold change") + ylab("-log10 p-value") +
+  ggtitle( this_tile  ) + theme(plot.title = element_text(size=15,hjust = 0.5))+
+  scale_colour_manual(values = c('blue','black','red'))  ## corresponding to the levels(res$change)
+print(g)
+###########################
+
+###########################
+#火山图
+library(ggpubr)
+library(ggthemes)
+# deg.data <- read.csv("D:/OneDrive - International Campus, Zhejiang University/Projects/Lysosome-Autophagy/data/GSE120613_limma_2.csv")
+# 对差异FDR进行log10转换
+dif$logQ <- -log10(dif$padj)
+# 绘制基本热图
+# ggscatter(deg.data, x = "logFC", y = "logQ") + theme_base()
+# 新加一列Group
+# deg.data$Group = "normal"
+# deg.data$Group[which( (deg.data$FDR < 0.05) & (deg.data$logFC > 1) )] = "up"
+# deg.data$Group[which( (deg.data$FDR < 0.05) & (deg.data$logFC < -1) )] = "down"
+# 查看上调和下调基因数
+table(dif$change)
+# 绘制新的火山图
+ggscatter(dif, x = "log2FoldChange", y = "logQ",
+          color = "change") + theme_base()
+
+# 改变火山图颜色(palette)和点的大小(size)
+ggscatter(dif, x = "log2FoldChange", y = "logQ",
+          color = "change", 
+          palette = c("green", "gray", "red"),
+          size = 1) + theme_base()
+
+# 为火山图添加logP分界线条(geom_hline)和logFC分界线条(geom_vline)
+ggscatter(dif, x = "log2FoldChange", y = "logQ",
+          color = "change", 
+          palette = c("green", "gray", "red"),
+          size = 1) + theme_base() + 
+  geom_hline(yintercept = 1.30, linetype="dashed") +
+  geom_vline(xintercept = c(-2,2), linetype="dashed")
+# 新加一列Label
+dif$Label = ""
+# 对差异表达基因的log2FC值进行从大到小排序取top 20
+dif <- dif[order(abs(dif$log2FoldChange),decreasing = T), ]
+logFC.genes <- head(dif$Gene, 20)
+
+# 高表达的基因中，选择FDR最小的20
+dif <- dif[order(abs(dif$logQ),decreasing = T), ]
+fdr.genes <- head(dif$Gene, 20)
+# 将logFC.genes 和fdr.genes合并，并加入到Label
+deg.top20.genes <- c(as.character(logFC.genes), as.character(fdr.genes))
+dif$Label[match(deg.top20.genes, dif$Gene)] <- deg.top20.genes
+#print (deg.data$Label)
+# 改变火山图点的颜色和坐标轴标注，使图片更美观
+ggscatter(dif, x = "log2FoldChange", y = "logQ",
+          color = "change", 
+          palette = c("#00BA38", "#BBBBBB", "#F8766D"),
+          size = 4,
+          label = dif$Label, 
+          font.label = 15, 
+          repel = T,
+          xlab = "logFC", 
+          ylab = "-log10(FDR)") + 
+  theme_base() + 
+  geom_hline(yintercept = 1.30, linetype="dashed") +
+  geom_vline(xintercept = c(-2,2), linetype="dashed")
+```
+
+# KEGG
+```{r}
+# kegg
+deg <- dif
+
+logFC_cutoff <- with(deg,mean(abs(log2FoldChange)) + 2*sd(abs(log2FoldChange)) )
+this_tile <- paste0('Cutoff for log2FoldChange is ',round(logFC_cutoff,3),
+                    '\nThe number of up gene is ',nrow(deg[deg$change =='UP',]) ,
+                    '\nThe number of down gene is ',nrow(deg[deg$change =='DOWN',])
+)
+# deg<-dif
+# devtools::install_github('YuLab-SMU/clusterProfiler')
+# devtools::install_github("YuLab-SMU/DOSE")
+# devtools::install_github("YuLab-SMU/HDO.db")
+library(org.csab.eg.db)
+library(clusterProfiler)
+# clusterProfiler作kegg富集分析：
+colnames(deg)[colnames(deg) == "Gene"] <- "SYMBOL"
+trans <- bitr(deg$SYMBOL, fromType="SYMBOL",
+              toType="ENTREZID", OrgDb="org.Mm.eg.db")
+
+gene_up= deg[deg$change == 'UP','SYMBOL']
+# 在trans中根据gene_up的SYMBOL进行匹配，并输出对应的ENTREZID
+gene_up <- trans[match(gene_up, trans$SYMBOL), "ENTREZID"]
+# 去掉entrez_ids中的NA值
+gene_up <- na.omit(gene_up)
+kk.up <- enrichKEGG(gene = gene_up,
+                    organism = 'mmu',
+                    pvalueCutoff = 0.05,
+                    qvalueCutoff =0.2)
+head(kk.up)[,1:6]
+dim(kk.up)
+
+gene_down= deg[deg$change == 'DOWN','SYMBOL']
+gene_down <- trans[match(gene_down, trans$SYMBOL), "ENTREZID"]
+gene_down <- na.omit(gene_down)
+kk.down <- enrichKEGG(gene = gene_down,
+                      organism = 'mmu',
+                      pvalueCutoff = 0.05,
+                      qvalueCutoff =0.2)
+head(kk.down)[,1:6]
+dim(kk.down)
+
+gene_diff=c(gene_up,gene_down)
+kk.diff <- enrichKEGG(gene         = gene_diff,
+                      organism     = 'mmu',
+                      pvalueCutoff = 0.05,
+                      qvalueCutoff =0.2)
+head(kk.diff)[,1:6]
+
+gene_all = deg[,'SYMBOL']
+gene_all <- trans[match(gene_all, trans$SYMBOL), "ENTREZID"]
+gene_all <- na.omit(gene_all)
+class(kk.diff)
+#提取出数据框
+kegg_diff_dt <- kk.diff@result
+
+#根据pvalue来选,用于可视化
+down_kegg <- kk.down@result %>%
+  filter(pvalue<0.05) %>%
+  mutate(group=-1)
+
+up_kegg <- kk.up@result %>%
+  filter(pvalue<0.05) %>%
+  mutate(group=1)
+
+up_kegg$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", up_kegg$Description)
+down_kegg$Description <- gsub(" - Mus musculus \\(house mouse\\)$", "", down_kegg$Description)
+
+#可视化走起
+library(ggplot2)
+kegg_plot <- function(up_kegg, down_kegg) {
+  dat <- rbind(up_kegg, down_kegg)
+  colnames(dat)
+  dat$pvalue <- -log10(dat$pvalue)
+  dat$pvalue <- dat$pvalue * dat$group 
+  
+  dat <- dat[order(dat$pvalue, decreasing = F), ]
+  
+  g_kegg <- ggplot(dat, aes(x = reorder(Description, order(pvalue, decreasing = F)), y = pvalue, fill = group)) + 
+    geom_bar(stat = "identity") + 
+    scale_fill_gradient(low = "blue", high = "red") + 
+    scale_x_discrete(name = "Pathway names") +
+    coord_flip() + 
+    theme_bw() + 
+    theme(plot.title = element_text(hjust = 0.5),
+          axis.text.x = element_text(size = 8),  # 调整横坐标轴文字大小
+          axis.title = element_text(size = 10),
+          axis.text.y = element_text(size = 5))  # 调整纵坐标轴文字大小
+}
+
+g_kegg <- kegg_plot(up_kegg, down_kegg)
+g_kegg
+
+# kegg 2
+deg <- read.csv("D:/OneDrive - International Campus, Zhejiang University/Projects/Lysosome-Autophagy/data/GSE120613_limma.csv")
+logFC_cutoff <- with(deg,mean(abs( logFC)) + 2*sd(abs( logFC)) )
+deg$change = as.factor(ifelse(deg$P.Value < 0.05 & abs(deg$logFC) > logFC_cutoff,
+                              ifelse(deg$logFC > logFC_cutoff ,'UP','DOWN'),'NOT')
+)
+this_tile <- paste0('Cutoff for logFC is ',round(logFC_cutoff,3),
+                    '\nThe number of up gene is ',nrow(deg[deg$change =='UP',]) ,
+                    '\nThe number of down gene is ',nrow(deg[deg$change =='DOWN',])
+)
+library(org.Mm.eg.db)
+library(clusterProfiler)
+# clusterProfiler作kegg富集分析：
+colnames(deg)[colnames(deg) == "Gene"] <- "SYMBOL"
+trans <- bitr(deg$SYMBOL, fromType="SYMBOL",
+              toType="ENTREZID", OrgDb="org.Mm.eg.db")
+KEGG_database <- 'mmu' #KEGG分析指定物种，物种缩写索引表详见http://www.genome.jp/kegg/catalog/org_list.html
+KEGG<-enrichKEGG(trans$ENTREZID,#KEGG富集分析
+                 organism = KEGG_database,
+                 pvalueCutoff = 0.05,
+                 qvalueCutoff = 0.05)
+KEGG@result$Description <- gsub(" - Mus musculus \\(house mouse\\)", "", KEGG@result$Description)
+barplot(KEGG,showCategory = 20,title = 'KEGG Pathway')
+
+deg2 <- read.csv("D:/OneDrive - International Campus, Zhejiang University/Projects/Lysosome-Autophagy/data/GSE120613_limma_2.csv")
+logFC_cutoff <- with(deg2,mean(abs( logFC)) + 2*sd(abs( logFC)) )
+deg2$change = as.factor(ifelse(deg2$P.Value < 0.05 & abs(deg2$logFC) > logFC_cutoff,
+                               ifelse(deg2$logFC > logFC_cutoff ,'UP','DOWN'),'NOT')
+)
+this_tile <- paste0('Cutoff for logFC is ',round(logFC_cutoff,3),
+                    '\nThe number of up gene is ',nrow(deg2[deg2$change =='UP',]) ,
+                    '\nThe number of down gene is ',nrow(deg2[deg2$change =='DOWN',])
+)
+library(org.Mm.eg.db)
+library(clusterProfiler)
+# clusterProfiler作kegg富集分析：
+colnames(deg2)[colnames(deg2) == "Gene"] <- "SYMBOL"
+trans2 <- bitr(deg2$SYMBOL, fromType="SYMBOL",
+              toType="ENTREZID", OrgDb="org.Mm.eg.db")
+KEGG_database <- 'mmu' #KEGG分析指定物种，物种缩写索引表详见http://www.genome.jp/kegg/catalog/org_list.html
+KEGG2<-enrichKEGG(trans2$ENTREZID,#KEGG富集分析
+                 organism = KEGG_database,
+                 pvalueCutoff = 0.05,
+                 qvalueCutoff = 0.05)
+KEGG2@result$Description <- gsub(" - Mus musculus \\(house mouse\\)", "", KEGG2@result$Description)
+barplot(KEGG2,showCategory = 20,title = 'KEGG Pathway')
+
+# enrichplot::cnetplot(KEGG,circular=FALSE,colorEdge = TRUE)
+
+
+# 打印修改后的结果
+print(result$Description)
+
+ggsave(g_kegg,filename = 'kegg_up_down.png')
+
+#go富集分析--耗费时间灰常长，很正常
+# library(clusterProfiler)
+# gene_up= deg[deg$change == 'up','ENTREZID'] 
+# gene_down=deg[deg$change == 'down','ENTREZID'] 
+# gene_diff=c(gene_up,gene_down)
+# head(deg)
+```
+
+# GO
+```{r}
+#**GO分析三大块**
+#细胞组分
+ego_CC <- enrichGO(gene = gene_diff,
+                   OrgDb= org.Mm.eg.db,
+                   ont = "CC",
+                   pAdjustMethod = "BH",
+                   minGSSize = 1,
+                   pvalueCutoff = 0.01,
+                   qvalueCutoff = 0.01,
+                   readable = TRUE)
+#生物过程
+ego_BP <- enrichGO(gene = gene_diff,
+                   OrgDb= org.Mm.eg.db,
+                   ont = "BP",
+                   pAdjustMethod = "BH",
+                   minGSSize = 1,
+                   pvalueCutoff = 0.01,
+                   qvalueCutoff = 0.01,
+                   readable = TRUE)
+#分子功能：
+ego_MF <- enrichGO(gene = gene_diff,
+                   OrgDb= org.Mm.eg.db,
+                   ont = "MF",
+                   pAdjustMethod = "BH",
+                   minGSSize = 1,
+                   pvalueCutoff = 0.01,
+                   qvalueCutoff = 0.01,
+                   readable = TRUE)
+
+#作图
+#第一种，条带图，按p从小到大排的
+barplot(ego_CC, showCategory=20,title="EnrichmentGO_CC")
+barplot(ego_BP, showCategory=20,title="EnrichmentGO_CC")
+#如果运行了没出图，就dev.new()
+#第二种，点图，按富集数从大到小的
+dotplot(ego_CC,title="EnrichmentGO_BP_dot")
+dotplot(ego_BP,title="EnrichmentGO_BP_dot")
+dotplot(ego_MF,title="EnrichmentGO_BP_dot")
+#保存
+pdf(file = "dotplot_GPL6244.pdf")
+dotplot(ego_CC,title="EnrichmentGO_BP_dot")
+dev.off()
+```
+
+# GSVA
+```{r}
+library(tidyverse)
+library(clusterProfiler)
+library(msigdbr)
+library(GSVA)
+library(GSEABase)
+library(pheatmap)
+library(limma)
+library(BiocParallel)
+
+data <- read.csv("D:/OneDrive - International Campus, Zhejiang University/Projects/MPXV/normalized_matrix.csv")
+dif <- read.csv("D:/OneDrive - International Campus, Zhejiang University/Projects/MPXV/inf_12h vs MOCK DEseq2-results.csv")
+
+
+## msigdbr包提取下载 一般尝试KEGG和GO做GSVA分析
+##KEGG
+KEGG_df_all <-  msigdbr(species = "Homo sapiens",
+                        category = "C2",
+                        subcategory = "CP:KEGG") 
+KEGG_df <- dplyr::select(KEGG_df_all,gs_name,gs_exact_source,gene_symbol)
+kegg_list <- split(KEGG_df$gene_symbol, KEGG_df$gs_name) ##按照gs_name给gene_symbol分组
+
+##GO
+GO_df_all <- msigdbr(species = "Homo sapiens",
+                     category = "C5")  
+GO_df <- dplyr::select(GO_df_all, gs_name, gene_symbol, gs_exact_source, gs_subcat)
+GO_df <- GO_df[GO_df$gs_subcat!="HPO",]
+go_list <- split(GO_df$gene_symbol, GO_df$gs_name) ##按照gs_name给gene_symbol分组
+
+#GSVA算法需要处理logCPM, logRPKM,logTPM数据或counts数据的矩阵####
+rownames(data) <- data$X
+data$X <- NULL
+dat <- as.matrix(data)
+dat <- as.matrix(log2(edgeR::cpm(dat))+1)
+
+geneset <- go_list
+exprMatrix=dat
+head(exprMatrix)
+dim(exprMatrix)
+gsva_matrix<- gsva(as.matrix(exprMatrix), go_list, method='ssgsea',kcdf='Gaussian',abs.ranking=TRUE)
+gsva_matrix1<- t(scale(t(gsva_matrix)))
+#head(gsva_matrix1)
+normalization<-function(x){
+  return((x-min(x))/(max(x)-min(x)))}
+nor_gsva_matrix1 <- normalization(gsva_matrix1) 
+dim(nor_gsva_matrix1)
+
+score.gsva.metab=as.data.frame(t(nor_gsva_matrix1))
+head(score.gsva.metab)
+
+#k是预设的分组数，为了方便观察而已，可以自行修改或删除
+p<-pheatmap(nor_gsva_matrix1,scale="row",show_colnames=F, show_rownames=F, cluster_cols=F, cluster_rows=F,cex=1, clustering_distance_rows="euclidean", cex=1,clustering_distance_cols="euclidean", clustering_method="complete", border_color=FALSE,cutree_col = 3)
+p
+cluster = cutree(p$tree_col,k=3) #from left to right 1 3 2
+table(cluster)
+
+#pdf("GSVA_heatmap.pdf",width=10,height=10)
+#p
+#dev.off()
+
+file_path <- "gsva_matrix.csv"
+write.csv(nor_gsva_matrix1, file_path)
+```
+
+## WCGNA
+```{r}
+#####################
+# 无性状数据-WGCAN分析
+library(WGCNA)
+options(stringsAsFactors = FALSE) #开启多线程
+setwd ("D:/OneDrive - International Campus, Zhejiang University/Projects/Unfinished Files/MPXV")
+femData <- read.csv("normalized_matrix.csv")
+
+rownames(femData) <- femData$X
+femData$X <- NULL
+
+#2.筛选方差前25%的基因##
+m.vars=apply(femData,1,var)
+dataExpr.upper= femData[which(m.vars>quantile(m.vars, probs = seq(0, 1, 0.25))[4]),]
+dim(dataExpr.upper) # [1] 3199   21
+
+#3.聚类前数据转置##
+dataExpr=as.data.frame(t(dataExpr.upper));
+
+nGenes = ncol(dataExpr)
+nSamples = nrow(dataExpr)
+dim(dataExpr)
+
+#4.样本聚类检查离群值##
+gsg = goodSamplesGenes(dataExpr, verbose = 3);
+gsg$allOK
+#查看是否有离群样品
+sampleTree = hclust(dist(dataExpr), method = "average")
+P1<-plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="")
+
+if (!gsg$allOK){
+  # Optionally, print the gene and sample names that were removed:
+  if (sum(!gsg$goodGenes)>0)
+    printFlush(paste("Removing genes:",
+                     paste(names(dataExpr)[!gsg$goodGenes], collapse = ",")));
+  if (sum(!gsg$goodSamples)>0)
+    printFlush(paste("Removing samples:",
+                     paste(rownames(dataExpr)[!gsg$goodSamples], collapse = ",")));
+  # Remove the offending genes and samples from the data:
+  dataExpr = dataExpr[gsg$goodSamples, gsg$goodGenes]
+}
+head(dataExpr)[,1:8]
+
+# 软阈值的筛选原则是使构建的网络更符合无标度网络特征
+# 5.软阈值的预设范围
+powers <- c(c(1:10), seq(from = 12, to=20, by=2))
+# 自动计算推荐的软阈值
+sft <- pickSoftThreshold(dataExpr, powerVector = powers)
+#Warning message:executing %dopar% sequentially: no parallel backend registered 
+# 推荐值。如果是NA，就需要画图来自己挑选
+sft$powerEstimate #最佳beta [1] 4
+
+# Plot the results:
+par(mfrow = c(1, 2))
+cex1 <- 0.9
+plot(sft$fitIndices[, 1], -sign(sft$fitIndices[, 3]) * sft$fitIndices[, 2],
+     xlab = "Soft Threshold (power)", ylab = "SFT, signed R^2", type = "n", main = paste("Scale independence"))
+text(sft$fitIndices[, 1], -sign(sft$fitIndices[, 3]) * sft$fitIndices[, 2],
+     labels = powers, col = "red")
+abline(h =0.8, col = "red")
+plot(sft$fitIndices[, 1], sft$fitIndices[, 5], type = "n", xlab = "Soft Threshold (power)",
+     ylab = "Mean Connectivity", main = paste("Mean connectivity"))
+text(sft$fitIndices[, 1], sft$fitIndices[, 5], labels = powers, col = "red")
+
+#6.构建网络
+net = blockwiseModules(dataExpr, power = 4, maxBlockSize = 6000,TOMType = "unsigned", minModuleSize = 30,reassignThreshold = 0, mergeCutHeight = 025,numericLabels = TRUE, pamRespectsDendro = FALSE,saveTOMs = TRUE, saveTOMFileBase = "TOM", verbose = 3)
+table(net$colors)
+
+#7.模块可视化
+## 灰色的为**未分类**到模块的基因。
+# Convert labels to colors for plotting
+moduleLabels = net$colors
+moduleColors = labels2colors(moduleLabels)
+# Plot the dendrogram and the module colors underneath
+plotDendroAndColors(net$dendrograms[[1]], moduleColors[net$blockGenes[[1]]],
+                    "Module colors",
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05)
+
+#8. 计算模块特征向量Mes
+table(moduleColors)
+MEs=net$MEs
+geneTree =net$dendrograms[[1]]
+
+#9.模块的导出
+#主要模块里面的基因直接的相互作用关系信息可以导出到cytoscape等网络可视化软件。
+TOM=TOMsimilarityFromExpr(dataExpr,power=6)
+modules= c("black", "brown")
+probes = colnames(dataExpr)
+inModule =is.finite(match(moduleColors,modules));
+modProbes=probes[inModule] #确定保留下来的。
+# 也是提取指定模块的基因名
+# Select the corresponding Topological Overlap
+modTOM = TOM[inModule, inModule]
+dimnames(modTOM) = list(modProbes, modProbes)
+## 模块对应的基因关系矩阵 
+
+#10.导出网络到cytoscape
+cyt = exportNetworkToCytoscape(
+  modTOM,
+  edgeFile = paste("CytoscapeInput-edges-", paste(modules, collapse="-"), ".txt", sep=""),
+  nodeFile = paste("CytoscapeInput-nodes-", paste(modules, collapse="-"), ".txt", sep=""),
+  weighted = TRUE,
+  threshold = 0.02,
+  nodeNames = modProbes, 
+  nodeAttr = moduleColors[inModule]
+);
+
+#11.绘制（合并后）模块之间相关性图
+
+MEDiss <- 1-cor(MEs)#距离矩阵
+METree <- hclust(as.dist(MEDiss), method = "average")
+tiff(file="METree. moduleColors.tiff",width=17,height=10, units="cm", compression="lzw", res=600)
+p1<-plot(METree,
+         main = "Clustering of module eigengenes",
+         xlab = "", sub = "")
+print(p1)
+dev.off()
+
+#12.可视化-画模块之间的热图
+dissTOM = 1-TOMsimilarityFromExpr(dataExpr, power = 18);
+tiff(file="moduleColors.module_heatmap.tiff",width=17,height=17, units="cm", compression="lzw", res=600)
+plotTOM <- dissTOM^7##为了更显著，用7次方
+p1<-TOMplot(plotTOM, geneTree, moduleColors, main="Network heatmap plot, all genes")
+print(p1)
+dev.off()
+
+#13.可视化-画模块之间的热图
+tiff(file="moduleColors.Eigengene adjacency heatmap.tiff",width=17,height=21, units="cm", compression="lzw", res=600)
+p2<-plotEigengeneNetworks(MEs, 
+                          "Eigengene adjacency heatmap", 
+                          marHeatmap = c(2,2,2,2), 
+                          plotDendrograms = T, 
+                          xLabelsAngle = 90) 
+print(p2)
+dev.off()
+# marHeatmap 设置下、左、上、右的边距
+#根据基因间表达量进行聚类所得到的各模块间的相关性图
+
+#14.输出模块基因!!!!
+datME=moduleEigengenes(dataExpr,moduleColors)[[1]]
+#color1=rep("pink",dim(dataExpr)[[2]])#仅仅获得pink的gene
+color1=as.character(moduleColors)#获得全部module对应的基因
+datKME=signedKME(dataExpr, datME)
+dataExpr1=as.data.frame(t(dataExpr));
+
+datSummary=rownames(dataExpr1)
+datout=data.frame(datSummary,colorNEW=color1,datKME )
+#write.table(datout, "pink_gene_module.xls", sep="\t", row.names=F,quote=F)
+write.table(datout, "all.module_gene_module.xls", sep="\t", row.names=F,quote=F)
+```
+
+## SVM-RFE
+```{r}
+# 利用SVM-RFE机器学习算法筛选关键因子
+set.seed(2023)
+library(e1071)
+
+#这里填写你存放的文件路径
+setwd ("D:/OneDrive - International Campus, Zhejiang University/Projects/Unfinished Files/MPXV")
+dataExpr <- read.csv("normalized_matrix.csv")
+rownames(dataExpr) <- dataExpr$X
+dataExpr$X <- NULL
+dataExpr=as.data.frame(t(dataExpr))
+source("D:\\OneDrive - International Campus, Zhejiang University\\Dry_Lab\\Tools\\msvmRFE.R")
+
+groups = read.csv("samples.CSV")
+dataExpr$Group = groups$Infected_time
+
+input <- data.frame(group = dataExpr$Group, dataExpr)
+# 删除原始数据框中的group列
+input <- input[, -which(names(input) == "Group")]
+
+nfold = 10 #10倍交叉验证
+nrows = nrow(input)
+folds = rep(1:nfold, len=nrows)[sample(nrows)]
+folds = lapply(1:nfold, function(x) which(folds == x))
+
+results = lapply(folds, svmRFE.wrap, input, k=10, halve.above=100)
+top.features = WriteFeatures(results, input, save=F)
+featsweep = lapply(1:5, FeatSweep.wrap, results, input)
+
+no.info = min(prop.table(table(input[,1])))
+errors = sapply(featsweep, function(x) ifelse(is.null(x), NA, x$error))
+
+pdf("svm_rfe.pdf", height = 8, width = 10)
+PlotErrors(errors, no.info=no.info)
+dev.off()
+plot(top.features)#这个图也可以保存
+```

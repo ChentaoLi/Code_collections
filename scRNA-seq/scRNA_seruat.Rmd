@@ -1,0 +1,1287 @@
+---
+title: "To explore the mechnism of CAR-T"
+author: "Chentao LI"
+date: "2023/6/1"
+output: html_document
+---
+# Data loading
+### import packages
+```{r,message=F,warning=F}
+gc()
+memory.limit(10240000000)
+library(Seurat)
+library(SeuratObject)
+library(tidyverse)
+library(harmony)
+library(ggplot2)
+library(ProjecTILs)
+```
+### Read the original files. 
+```{r}
+# Import data
+setwd("D:/OneDrive - International Campus, Zhejiang University/Projects/Transducing Methods in CAR-T/Data/GSE186596")
+
+# Read data for Patient 1 - Untreated
+P1_UT <- Read10X("GSM5657287")
+P1_UT <- CreateSeuratObject(counts = P1_UT, min.cells = 3, min.features = 500)
+P1_UT$sample_name <- "GSM5657287"
+P1_UT$Patient <- "Patient1"
+P1_UT$HP <- "Patient"
+P1_UT$method <- "Untreated"
+
+# Read data for Patient 1 - LV_CAR
+P1_LV_CAR <- Read10X("GSM5657288")
+P1_LV_CAR <- CreateSeuratObject(counts = P1_LV_CAR, min.cells = 3, min.features = 500)
+P1_LV_CAR$sample_name <- "GSM5657288"
+P1_LV_CAR$Patient <- "Patient1"
+P1_LV_CAR$HP <- "Patient"
+P1_LV_CAR$method <- "LV-19bbz"
+
+# Read data for Patient 1 - LV_CAR_PD1
+P1_LV_CAR_PD1 <- Read10X("GSM5657289")
+P1_LV_CAR_PD1 <- CreateSeuratObject(counts = P1_LV_CAR_PD1, min.cells = 3, min.features = 500)
+P1_LV_CAR_PD1$sample_name <- "GSM5657289"
+P1_LV_CAR_PD1$Patient <- "Patient1"
+P1_LV_CAR_PD1$HP <- "Patient"
+P1_LV_CAR_PD1$method <- "LV-19bbz_PD1-KO"
+
+# Read data for Patient 1 - AAVS1
+P1_AAVS1 <- Read10X("GSM5657290")
+P1_AAVS1 <- CreateSeuratObject(counts = P1_AAVS1, min.cells = 3, min.features = 500)
+P1_AAVS1$sample_name <- "GSM5657290"
+P1_AAVS1$Patient <- "Patient1"
+P1_AAVS1$HP <- "Patient"
+P1_AAVS1$method <- "AAVS1-19bbz"
+
+# Read data for Patient 1 - ET
+P1_ET <- Read10X("GSM5657291")
+P1_ET <- CreateSeuratObject(counts = P1_ET, min.cells = 3, min.features = 500)
+P1_ET$sample_name <- "GSM5657291"
+P1_ET$Patient <- "Patient1"
+P1_ET$HP <- "Patient"
+P1_ET$method <- "PD1-19bbz"
+```
+
+### Set sample names
+```{r}
+setwd("D:/OneDrive - International Campus, Zhejiang University/Projects/Transducing Methods in CAR-T/Data/GSE186596")
+
+# Read data for Patient 2 - Untreated
+P2_UT <- Read10X("GSM5657292")
+P2_UT <- CreateSeuratObject(counts = P2_UT, min.cells = 3, min.features = 500)
+P2_UT$sample_name <- "GSM5657292"
+P2_UT$Patient <- "Patient2"
+P2_UT$HP <- "Patient"
+P2_UT$method <- "Untreated"
+
+# Read data for Patient 2 - LV_CAR
+P2_LV_CAR <- Read10X("GSM5657293")
+P2_LV_CAR <- CreateSeuratObject(counts = P2_LV_CAR, min.cells = 3, min.features = 500)
+P2_LV_CAR$sample_name <- "GSM5657293"
+P2_LV_CAR$Patient <- "Patient2"
+P2_LV_CAR$HP <- "Patient"
+P2_LV_CAR$method <- "LV-19bbz"
+
+# Read data for Patient 2 - LV_CAR_PD1
+P2_LV_CAR_PD1 <- Read10X("GSM5657294")
+P2_LV_CAR_PD1 <- CreateSeuratObject(counts = P2_LV_CAR_PD1, min.cells = 3, min.features = 500)
+P2_LV_CAR_PD1$sample_name <- "GSM5657294"
+P2_LV_CAR_PD1$Patient <- "Patient2"
+P2_LV_CAR_PD1$HP <- "Patient"
+P2_LV_CAR_PD1$method <- "LV-19bbz_PD1-KO"
+
+# Read data for Patient 2 - AAVS1
+P2_AAVS1 <- Read10X("GSM5657295")
+P2_AAVS1 <- CreateSeuratObject(counts = P2_AAVS1, min.cells = 3, min.features = 500)
+P2_AAVS1$sample_name <- "GSM5657295"
+P2_AAVS1$Patient <- "Patient2"
+P2_AAVS1$HP <- "Patient"
+P2_AAVS1$method <- "AAVS1-19bbz"
+
+# Read data for Patient 2 - ET
+P2_ET <- Read10X("GSM5657296")
+P2_ET <- CreateSeuratObject(counts = P2_ET, min.cells = 3, min.features = 500)
+P2_ET$sample_name <- "GSM5657296"
+P2_ET$Patient <- "Patient2"
+P2_ET$HP <- "Patient"
+P2_ET$method <- "PD1-19bbz"
+```
+
+### Merge
+```{r}
+# Create a list of Seurat objects
+seurat_list <- list(P1_UT, P1_LV_CAR, P1_LV_CAR_PD1, P1_AAVS1, P1_ET, 
+                    P2_UT, P2_LV_CAR, P2_LV_CAR_PD1, P2_AAVS1, P2_ET)
+# 合并数据集
+seurat_object <- merge(P1_UT, y = c(P1_LV_CAR, P1_LV_CAR_PD1, P1_AAVS1, P1_ET, 
+                    P2_UT, P2_LV_CAR, P2_LV_CAR_PD1, P2_AAVS1, P2_ET))
+
+# 移除原始数据集
+rm(P1_UT, P1_LV_CAR, P1_LV_CAR_PD1, P1_AAVS1, P1_ET, 
+                    P2_UT, P2_LV_CAR, P2_LV_CAR_PD1, P2_AAVS1, P2_ET)
+
+rm(seurat_list)
+# 保存合并后的结果为RDS文件
+setwd("D:/OneDrive - International Campus, Zhejiang University/Projects/Transducing Methods in CAR-T/Data")
+saveRDS(seurat_object, file = "CART_Patient.rds")
+```
+
+### Preprocess
+```{r}
+seurat_object[["percent.mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-|^mt-")
+VlnPlot(seurat_object, features = c("nFeature_RNA", "nCount_RNA","percent.mt"), ncol = 2)
+seurat_object <- NormalizeData(
+  seurat_object, normalization.method = "LogNormalize", scale.factor = 10000)
+plot1 <- FeatureScatter(seurat_object, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(seurat_object, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+```
+
+```{r}
+seurat_object <- subset(seurat_object, subset = nFeature_RNA > 200 & nFeature_RNA < 5000 & percent.mt < 20)
+seurat_object <- FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000)
+# Identify the 10 most highly variable genes
+top10 <- head(VariableFeatures(seurat_object), 10)
+# plot variable features with and without labels
+plot1 =VariableFeaturePlot(seurat_object)
+LabelPoints(plot = plot1, points = top10, repel = TRUE)
+seurat_object <- ScaleData(seurat_object)
+seurat_object <- RunPCA(seurat_object, features = VariableFeatures(object = seurat_object),
+                verbose = FALSE)
+options(repr.plot.height = 5, repr.plot.width = 12)
+```
+
+```{r}
+DimPlot(object = seurat_object, reduction = "pca", 
+        pt.size = .1, group.by = "method")
+VlnPlot(object = seurat_object, features = "PC_1", 
+        group.by = "method", pt.size = .1)
+DimHeatmap(seurat_object,dims = 1:15, cells = 500, balanced = TRUE)
+```
+### Harmony
+```{r}
+library(Rcpp)
+library(harmony)
+
+seurat_object <- seurat_object %>% RunHarmony("sample_name",plot_convergence = TRUE,lambda = 10)
+harmony_embeddings <- Embeddings(seurat_object, 'harmony')
+options(repr.plot.height = 5, repr.plot.width = 12)
+DimPlot(object = seurat_object, reduction = "harmony", 
+        pt.size = .1, group.by = "sample_name")
+VlnPlot(object = seurat_object, features = "harmony_1", 
+        group.by = "sample_name", pt.size = .1)
+
+top10 <- head(VariableFeatures(seurat_object), 10)
+plot1 = VariableFeaturePlot(seurat_object)
+LabelPoints(plot = plot1, points = top10, repel = TRUE)
+DimPlot(seurat_object, reduction = "harmony")
+DimHeatmap(seurat_object,dims = 1:15, cells = 500, balanced = TRUE)
+
+ElbowPlot(seurat_object)
+
+saveRDS(seurat_object,"CART_Patient_Harmony.rds")
+```
+
+### UMAP
+```{r}
+setwd("D:/OneDrive - International Campus, Zhejiang University/Projects/Lysosome-CART/")
+seurat_object <- readRDS("CART_Patient_Harmony.rds")
+UMAP <- seurat_object %>% 
+  RunUMAP(reduction = "pca", dims = 1:15) %>% 
+  FindNeighbors(reduction = "pca", dims = 1:15) %>% 
+  FindClusters(resolution =0.8) %>% 
+  identity()
+
+DimPlot(UMAP, reduction = "umap", label = TRUE, raster=FALSE)
+```
+
+```{r}
+setwd("D:/OneDrive - International Campus, Zhejiang University/Projects/Lysosome-CART/")
+seurat_object <- readRDS("CART_Patient_Harmony.rds")
+
+TSNE <- seurat_object %>% 
+  RunTSNE(reduction = "pca", dims = 1:15) %>% 
+  FindNeighbors(reduction = "pca", dims = 1:15) %>% 
+  FindClusters(resolution =2.6) %>% 
+  identity()
+
+DimPlot(TSNE, reduction = "tsne", label = TRUE, raster=FALSE)
+```
+
+```{r}
+DimPlot(UMAP, reduction = "umap", group.by = "Patient",repel = TRUE)
+DimPlot(UMAP, reduction = "umap", group.by = "sample_name",repel = TRUE)
+DimPlot(UMAP, reduction = "umap", group.by = "method",repel = TRUE)
+
+DimPlot(UMAP, reduction = "umap", split.by = "Patient", 
+        group.by = "method",repel = TRUE,ncol = 2,pt.size = 0.5)
+```
+
+```{r}
+DimPlot(TSNE, reduction = "tsne", group.by = "Patient",repel = TRUE)
+DimPlot(TSNE, reduction = "tsne", group.by = "sample_name",repel = TRUE)
+DimPlot(TSNE, reduction = "tsne", group.by = "method",repel = TRUE)
+
+DimPlot(TSNE, reduction = "tsne", split.by = "Patient", 
+        group.by = "method",repel = TRUE,ncol = 2,pt.size = 0.5)
+```
+```{r}
+FeaturePlot(UMAP, features = c('CD4', "CD8A"),repel = TRUE)
+FeaturePlot(TSNE, features = c('CD4', "CD8A"),repel = TRUE)
+```
+
+```{r}
+library(COSG)
+marker_cosg <- cosg(
+  TSNE,
+  groups='all',
+  assay='RNA',
+  slot='data',
+  mu=1,
+  n_genes_user=100)
+```
+```{r}
+FeaturePlot(TSNE, features = c('CD4', "CD8A", 'GNLY', "GZMK", "PLK1"),repel = TRUE)
+
+```
+
+### Annonation
+```{r}
+data <- TSNE
+data <- RenameIdents(object = data, "0" = "Naive CD8+ T",
+                     "1" = "Naive CD4+ T", "2" = "Regulatory T",
+                     "3" = "T helper2", "4" = "Cytotoxic CD4 + T",
+                     '5'='Exhausted CD8+ T', '6'='Exhausted CD8+ T',
+                     "7" = "Naive CD8+ T", "8" = "Exhausted CD8+ T", "9" = "Exhausted CD8+ T", 
+                     "10" = "T helper1", "11" = "Exhausted CD8+ T", "12" = "Exhausted CD8+ T", 
+                     "13" = "Effector CD8+ memory T", "14" = "Effector CD8+ memory T", "15" = "Naive CD8+ T",
+                     "16" = "Naive CD8+ T", "17" = "Naive CD8+ T"
+                     )
+
+DimPlot(data, reduction = "tsne")
+```
+```{r}
+FeaturePlot(TSNE, features = c('CD4', "CD8A", 'GNLY', "GZMK", "LAG3"),repel = TRUE)
+```
+
+
+```{r}
+setwd("D:/OneDrive - International Campus, Zhejiang University/Projects/Lysosome-CART/")
+seurat_object <- readRDS("CART_Patient_Harmony.rds")
+
+TSNE <- seurat_object %>% 
+  RunTSNE(reduction = "pca", dims = 1:15) %>% 
+  FindNeighbors(reduction = "pca", dims = 1:15) %>% 
+  FindClusters(resolution =3) %>% 
+  identity()
+
+DimPlot(TSNE, reduction = "tsne", label = TRUE, raster=FALSE)
+```
+
+```{r}
+subclusters <- split(x = TSNE@meta.data, f = TSNE@meta.data$seurat_clusters)
+ref <- load.reference.map("D:/OneDrive - International Campus, Zhejiang University/Dry_Lab/ProjectTIL/CD8T_human_ref_v1.rds")
+
+subset_data <- subset(TSNE, idents = 0)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 1)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 2)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 3)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 4)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 5)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+```{r}
+subset_data <- subset(TSNE, idents = 6)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 7)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 8)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 9)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 10)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 11)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 12)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 13)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 14)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 15)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 16)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 17)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 18)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 19)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 20)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 21)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 22)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 23)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 24)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 25)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 26)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 27)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 28)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 29)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 30)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 31)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 32)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 33)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 34)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 35)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 36)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 37)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 38)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 39)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 40)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 41)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 42)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 43)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 44)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 45)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+ref <- load.reference.map("D:/OneDrive - International Campus, Zhejiang University/Dry_Lab/ProjectTIL/CD4T_human_ref_v1.rds")
+
+subset_data <- subset(TSNE, idents = 0)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 1)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 2)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 3)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 4)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 5)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 6)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 7)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 8)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 9)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 10)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 11)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 12)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 13)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 14)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 15)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 16)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 17)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 18)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 19)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 20)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 21)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 22)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 23)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 24)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 25)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 26)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 27)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 28)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 29)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 30)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 31)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 32)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 33)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 34)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 35)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 36)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 37)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 38)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 39)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 40)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 41)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+subset_data <- subset(TSNE, idents = 42)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 43)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 44)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+
+subset_data <- subset(TSNE, idents = 45)
+query.projected <- Run.ProjecTILs(subset_data, ref = ref)
+plot.projection(ref, query.projected, linesize = 0.5, pointsize = 0.5)
+```
+
+```{r}
+data <- TSNE
+data <- RenameIdents(object = data, "0" = "Naive CD8+ T",
+                     "1" = "Naive CD8+ T", 
+                     "2" = "Cytotoxic CD4+ T",
+                     "3" = "Naive CD4+ T", 
+                     "4" = "Naive CD8+ T",
+                     '5'='Naive CD4+ T', 
+                     '6'= 'Naive CD4+ T',
+                     "7" = "Naive CD4+ T", 
+                     "8" = "T helper 17", 
+                     "9" = "Naive CD8+ T", 
+                     "10" = "Central Memory CD8+ T", 
+                     "11" = "Regulary T", 
+                     "12" = "Exhausted CD8+ T", 
+                     "13" = "Naive CD8+ T", 
+                     "14" = "Exhausted CD8+ T", 
+                     "15" = "Exhausted CD8+ T",
+                     "16" = "T helper 17", 
+                     "17" = "Regulary T", 
+                     "18" = "Exhausted CD8+ T", 
+                     "19" = "Exhausted CD8+ T", 
+                     "20" = "Exhausted CD8+ T",
+                     "21" = "Monocytes", 
+                     "22" = "T helper 17",
+                     "23" = "T helper 17", 
+                     "24" = "Exhausted CD8+ T",
+                     '25'='Exhausted CD8+ T', 
+                     '26'='Exhausted CD8+ T',
+                     "27" = "Exhausted CD8+ T", 
+                     "28" = "Effector Memory CD8+ T", 
+                     "29" = "Exhausted CD8+ T",
+                     "30" = "Naive CD8+ T",
+                     "31" = "Naive CD8+ T", 
+                     "32" = "Central Memory CD8+ T",
+                     "33" = "Exhausted CD8+ T", 
+                     "34" = "Central Memory CD8+ T",
+                     '35'='Exhausted CD8+ T', 
+                     '36'='Naive CD8+ T',
+                     "37" = "Regulary T", 
+                     "38" = "T helper 17", 
+                     "39" = "Exhausted CD8+ T",
+                     "40" = "Exhausted CD4+ T", 
+                     "41" = "Exhausted CD8+ T",
+                     "42" = "Naive CD8+ T",
+                     "43" = "Naive CD8+ T", 
+                     "44" = "Exhausted CD8+ T", 
+                     '45'='Exhausted CD8+ T')
+
+DimPlot(data, reduction = "tsne")
+```
+
+```{r}
+# 计算各个method中各个细胞亚群的比例
+group_counts <- table(data$method, Idents(data))
+# 计算各个亚群在每个method中所占的细胞数比例
+group_proportions <- prop.table(group_counts, margin = 1)
+```
+
+```{r}
+#根据orig.ident来计算细胞百分比
+cell.prop<-as.data.frame(group_proportions)
+
+write.csv(cell.prop,row.names = FALSE,file = 'cell_prop_all.csv')
+
+allcolour=c("#DC143C","#0000FF","#20B2AA","#FFA500","#9370DB","#98FB98","#F08080","#1E90FF","#7CFC00","#FFFF00",
+            "#808000","#FF00FF","#FA8072","#7B68EE","#9400D3","#800080","#A0522D","#D2B48C","#D2691E","#87CEEB","#40E0D0","#5F9EA0",
+            "#FF1493","#0000CD","#008B8B","#FFE4B5","#8A2BE2","#228B22","#E9967A","#4682B4","#32CD32","#F0E68C","#FFFFE0","#EE82EE",
+            "#FF6347","#6A5ACD","#9932CC","#8B008B","#8B4513","#DEB887")
+
+ggplot(cell.prop) + 
+  geom_bar(aes(x =Var2, y= Freq, fill = Var1),stat = "identity",width = 0.7,size = 0.5,colour = '#222222')+ 
+  theme_classic() +
+  labs(x='Sample',y = 'Ratio')+
+  scale_fill_manual(values = allcolour)+
+  theme(panel.border = element_rect(fill=NA,color="black", size=0.5, linetype="solid"))
+```
+
+```{r}
+method_proportions <- t(group_proportions)
+
+write.csv(group_counts,file = 'group_counts.csv')
+```
+
+```{r}
+DimPlot(TSNE, reduction = "tsne", group.by = "Patient",repel = TRUE)
+DimPlot(TSNE, reduction = "tsne", group.by = "sample_name",repel = TRUE)
+DimPlot(TSNE, reduction = "tsne", group.by = "method",repel = TRUE)
+
+DimPlot(TSNE, reduction = "tsne", split.by = "Patient", 
+        group.by = "method",repel = TRUE,ncol = 2,pt.size = 0.5)
+```
+```{r}
+saveRDS(data, file = "CART_Patient_TSNE.rds")
+```
+
+```{r}
+data <- AddMetaData(data, metadata = data@active.ident, col.name = "CellType")
+CD8T <- subset(data, idents = c("Naive CD8+ T", "Central Memory CD8+ T", "Effector Memory CD8+ T"))
+
+CD8T <- FindVariableFeatures(CD8T, selection.method = "vst", nfeatures = 2000)
+top10 <- head(VariableFeatures(CD8T), 10)
+plot1 =VariableFeaturePlot(CD8T)
+LabelPoints(plot = plot1, points = top10, repel = TRUE)
+CD8T <- ScaleData(CD8T)
+CD8T <- RunPCA(CD8T, features = VariableFeatures(object = CD8T),
+                verbose = FALSE)
+options(repr.plot.height = 5, repr.plot.width = 12)
+
+DimPlot(object = CD8T, reduction = "pca", 
+        pt.size = .1, group.by = "method")
+VlnPlot(object = CD8T, features = "PC_1", 
+        group.by = "method", pt.size = .1)
+DimHeatmap(CD8T,dims = 1:15, cells = 500, balanced = TRUE)
+```
+
+
+```{r}
+top10 <- head(VariableFeatures(CD8T), 10)
+plot1 = VariableFeaturePlot(CD8T)
+LabelPoints(plot = plot1, points = top10, repel = TRUE)
+DimPlot(CD8T, reduction = "harmony")
+DimHeatmap(CD8T,dims = 1:15, cells = 500, balanced = TRUE)
+
+ElbowPlot(CD8T)
+
+```
+
+```{r}
+TSNE_CD8T <- CD8T %>% 
+  RunTSNE(reduction = "pca", dims = 1:15) %>% 
+  FindNeighbors(reduction = "pca", dims = 1:15) %>% 
+  FindClusters(resolution =0.8) %>% 
+  identity()
+
+DimPlot(TSNE_CD8T, reduction = "tsne", label = TRUE, raster=FALSE)
+```
+
+```{r}
+DimPlot(TSNE_CD8T, reduction = "tsne", group.by = "CellType", label = TRUE, raster=FALSE)
+
+DimPlot(TSNE_CD8T, reduction = "tsne", split.by = "Patient", 
+        group.by = "CellType",repel = TRUE,ncol = 2,pt.size = 0.5)
+
+DimPlot(TSNE_CD8T, reduction = "tsne", split.by = "method", 
+        group.by = "CellType",repel = TRUE,ncol = 2,pt.size = 0.5)
+```
+
+```{r}
+diff_UE <- FindMarkers(TSNE_CD8T, min.pct = 0.25, 
+                    logfc.threshold = 0.25,
+                    group.by = "method",
+                    ident.1 ="PD1-19bbz",
+                    ident.2="Untreated") 
+```
+
+```{r}
+library(phangorn)
+library(scMetabolism)
+library(ggplot2)
+library(rsvd)
+library(AUCell)
+library(GSEABase)
+library(GSVA)
+```
+
+```{r}
+countexp.Seurat<-sc.metabolism.Seurat(obj = TSNE_CD8T, method = "AUCell", imputation =F, ncores = 2, metabolism.type = "KEGG")
+```
+
+```{r}
+metabolism.matrix <- countexp.Seurat@assays$METABOLISM$score
+
+row_means <- apply(metabolism.matrix, 1, mean)
+sorted_means <- order(row_means, decreasing = TRUE)
+top_50_means_rows <- sorted_means[1:40]
+common_rows <- intersect(top_20_rows, top_50_means_rows)
+common_rows_data <- metabolism.matrix[common_rows, ]
+
+# 计算每行的标准差
+row_sd <- apply(common_rows_data, 1, sd)
+# 根据标准差对行进行排序
+sorted_rows <- order(row_sd, decreasing = TRUE)
+# 获取前20个变化最显著的行
+top_20_rows <- sorted_rows[1:8]
+# 提取原始矩阵中相应的行
+top_20_rows_data <- common_rows_data[top_20_rows, ]
+
+input.pathway<- rownames(top_20_rows_data)
+
+DotPlot.metabolism(obj = countexp.Seurat, pathway = input.pathway, phenotype = "method", norm = "y")
+```
+
+```{r}
+library(dplyr)
+
+top50gene <- diff_UE %>% top_n(n = 50, wt = avg_log2FC) %>% rownames()
+bottom50gene <- diff_UE %>% top_n(n = -50, wt = avg_log2FC) %>% rownames()
+
+#构建基因集用于GSVA
+mygeneset <- cbind(top50gene,bottom50gene)
+mygeneset <- as.data.frame(mygeneset)
+```
+
+```{r}
+gene.expr <-  as.matrix(TSNE_CD8T[["RNA"]]@data)
+
+library(GSVA)
+gsva.result <- GSVA::gsva(gene.expr, mygeneset,kcdf='Gaussian')
+
+```
+
+```{r}
+mymatrix <- t(gsva.result)
+mymatrix <- cbind(mymatrix,as.data.frame(pbmc$celltype))
+colnames(mymatrix)[ncol(mymatrix)] <- 'CellType'
+head(mymatrix)
+```
+
+```{r}
+library(GSVA)
+library(ggplot2)
+library(dplyr)
+# force = TRUE
+library(msigdbr)
+library(Seurat)
+library(pheatmap)
+library(patchwork)
+
+expr <- as.data.frame(TSNE_CD8T@assays$RNA@data) #表达矩阵
+meta <- TSNE_CD8T@meta.data[,c("orig.ident","CellType","method")] #类别
+m_df = msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:KEGG") #选取物种人类
+msigdbr_list = split(x = m_df$gene_symbol, f = m_df$gs_name)
+expr=as.matrix(expr) 
+kegg <- gsva(expr, msigdbr_list, kcdf="Gaussian",method = "gsva",parallel.sz=10) #gsva
+pheatmap(kegg, show_rownames=1, show_colnames=0, annotation_col=meta,fontsize_row=5, filename='gsva_heatmap.png', width=15, height=12)#绘制热图
+es <- data.frame(t(kegg),stringsAsFactors=F)  #添加到单细胞矩阵中，可视化相关通路的在umap上聚集情况，可理解为一个通路即一个基因
+```
+
+```{r}
+scRNA <- AddMetaData(TSNE_CD8T, es)
+
+p1 <- FeaturePlot(scRNA, features = "KEGG_PRIMARY_BILE_ACID_BIOSYNTHESIS", reduction = 'tsne')
+p2 <- FeaturePlot(scRNA, features = "KEGG_ETHER_LIPID_METABOLISM", reduction = 'tsne')
+p3 <- FeaturePlot(scRNA, features = "KEGG_RIBOSOME", reduction = 'tsne')
+p4 <- FeaturePlot(scRNA, features = "KEGG_ASTHMA", reduction = 'tsne')
+
+plotc = (p1|p2)/(p3|p4)
+```
+
+```{r}
+saveRDS(scRNA, file = "CD8T_GSVA.rds")
+```
+
+
+```{r}
+data <- AddMetaData(data, metadata = data@active.ident, col.name = "CellType")
+CD4T <- subset(data, idents = c("Naive CD4+ T", "Cytotoxic CD4+ T"))
+
+CD4T <- FindVariableFeatures(CD4T, selection.method = "vst", nfeatures = 2000)
+top10 <- head(VariableFeatures(CD4T), 10)
+plot1 =VariableFeaturePlot(CD4T)
+LabelPoints(plot = plot1, points = top10, repel = TRUE)
+CD4T <- ScaleData(CD4T)
+CD4T <- RunPCA(CD4T, features = VariableFeatures(object = CD4T),
+                verbose = FALSE)
+options(repr.plot.height = 5, repr.plot.width = 12)
+
+DimPlot(object = CD4T, reduction = "pca", 
+        pt.size = .1, group.by = "method")
+VlnPlot(object = CD4T, features = "PC_1", 
+        group.by = "method", pt.size = .1)
+DimHeatmap(CD4T,dims = 1:15, cells = 500, balanced = TRUE)
+```
+
+```{r}
+TSNE_CD4T <- CD4T %>% 
+  RunTSNE(reduction = "pca", dims = 1:15) %>% 
+  FindNeighbors(reduction = "pca", dims = 1:15) %>% 
+  FindClusters(resolution =0.8) %>% 
+  identity()
+
+DimPlot(TSNE_CD4T, reduction = "tsne", label = TRUE, raster=FALSE)
+```
+
+```{r}
+DimPlot(TSNE_CD4T, reduction = "tsne", group.by = "CellType", label = TRUE, raster=FALSE)
+
+DimPlot(TSNE_CD4T, reduction = "tsne", split.by = "Patient", 
+        group.by = "CellType",repel = TRUE,ncol = 2,pt.size = 0.5)
+
+DimPlot(TSNE_CD4T, reduction = "tsne", split.by = "method", 
+        group.by = "CellType",repel = TRUE,ncol = 2,pt.size = 0.5)
+```
+
+```{r}
+expr2 <- as.data.frame(TSNE_CD4T@assays$RNA@data) #表达矩阵
+meta2 <- TSNE_CD4T@meta.data[,c("orig.ident","CellType","method")] #类别
+# m_df = msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:KEGG") #选取物种人类
+# msigdbr_list = split(x = m_df$gene_symbol, f = m_df$gs_name)
+expr2=as.matrix(expr2) 
+kegg2 <- gsva(expr2, msigdbr_list, kcdf="Gaussian",method = "gsva",parallel.sz=10) #gsva
+pheatmap(kegg2, show_rownames=1, show_colnames=0, annotation_col=meta,fontsize_row=5, filename='gsva_heatmap2.png', width=15, height=12)#绘制热图
+es2 <- data.frame(t(kegg2),stringsAsFactors=F)  #添加到单细胞矩阵中，可视化相关通路的在umap上聚集情况，可理解为一个通路即一个基因
+```
+
+```{r}
+scRNA2 <- AddMetaData(TSNE_CD4T, es2)
+
+p5 <- FeaturePlot(scRNA2, features = "KEGG_PRIMARY_BILE_ACID_BIOSYNTHESIS", reduction = 'tsne')
+p6 <- FeaturePlot(scRNA2, features = "KEGG_ETHER_LIPID_METABOLISM", reduction = 'tsne')
+p7 <- FeaturePlot(scRNA2, features = "KEGG_RIBOSOME", reduction = 'tsne')
+p8 <- FeaturePlot(scRNA2, features = "KEGG_ASTHMA", reduction = 'tsne')
+
+plotc2 = (p5|p6)/(p7|p8)
+plotc2
+```
+
+```{r}
+saveRDS(scRNA2, file = "CD4T_GSVA.rds")
+```
+
+```{r}
+a <- t(es2)
+row_means <- apply(a, 1, mean)
+sorted_means <- order(row_means, decreasing = TRUE)
+top_50_means_rows <- sorted_means[1: 100]
+
+row_sd <- apply(a, 1, sd)
+sorted_rows <- order(row_sd, decreasing = TRUE)
+top_20_rows <- sorted_rows[1:10]
+top_20_rows_data <- a[top_20_rows, ]
+
+common_rows <- intersect(top_20_rows, top_50_means_rows)
+common_rows_data <- a[common_rows, ]
+
+input.pathway<- rownames(common_rows_data)
+
+FeaturePlot(scRNA2, features = input.pathway, reduction = 'tsne')
+
+rows <- grep("LYSOSO|AUTOPH", rownames(a))
+selected_rows <- matrix_data[rows, ]
+
+rownames(a)[96]
+
+FeaturePlot(scRNA2, features = "KEGG_LYSOSOME", reduction = 'tsne')
+
+DotPlot(scRNA2, features = c("KEGG_LYSOSOME", "KEGG_REGULATION_OF_AUTOPHAGY"),group.by = "method", assay='RNA')  + coord_flip()
+```
+
+```{r}
+b <- t(es)
+write.csv(b, "b.csv")
+
+row_means <- apply(b, 1, mean)
+sorted_means <- order(row_means, decreasing = TRUE)
+top_50_means_rows <- sorted_means[1: 100]
+
+row_sd <- apply(b, 1, sd)
+sorted_rows <- order(row_sd, decreasing = TRUE)
+top_20_rows <- sorted_rows[1:10]
+top_20_rows_data <- b[top_20_rows, ]
+
+common_rows <- intersect(top_20_rows, top_50_means_rows)
+common_rows_data <- b[common_rows, ]
+
+input.pathway<- rownames(common_rows_data)
+
+FeaturePlot(scRNA, features = input.pathway, reduction = 'tsne')
+
+DotPlot(scRNA, features = c("KEGG_LYSOSOME", "KEGG_REGULATION_OF_AUTOPHAGY"),group.by = "method", assay='RNA')  + coord_flip()
+```
+
+```{r}
+# 假设为两组对照实验，我们希望看到一些通路（功能是否显著），则可使用下面方法
+DD1 <-  subset(pbmc,idents = c("3","6")) # 对照组放在前面
+expr <- as.data.frame(DD1@assays$RNA@data)
+meta <- DD1@meta.data[,c("seurat_clusters")]
+m_df = msigdbr(species = "Homo sapiens", category = "C2")
+msigdbr_list = split(x = m_df$gene_symbol, f = m_df$gs_name)
+expr=as.matrix(expr)
+kegg <- gsva(expr, msigdbr_list, kcdf="Gaussian",method = "gsva",parallel.sz=10)
+library(limma) ##limma做差异分析
+exprSet <- kegg
+group <- factor(meta,levels = c("3","6"),ordered = F)## 分组变成向量，并且限定leves的顺序， levels里面，把对照组放在前面
+design <- model.matrix(~group)# 构建比较矩阵
+colnames(design) <- levels(group)
+fit <- lmFit(exprSet,design)#线性模型拟合
+fit1 <- eBayes(fit)#贝叶斯检验
+allDiff=topTable(fit1,adjust='fdr',coef=2,number=Inf)
+write.table(allDiff,"kegg.txt",col.names=T,row.names=T,sep="\t")
+#根据allDiff找出你自己感兴趣的通路,例如
+up <- c("REACTOME_SEROTONIN_NEUROTRANSMITTER_RELEASE_CYCLE",'REACTOME_DOPAMINE_NEUROTRANSMITTER_RELEASE_CYCLE','REACTOME_NEUROTRANSMITTER_RELEASE_CYCLE','REACTOME_NEUROTOXICITY_OF_CLOSTRIDIUM_TOXINS','REACTOME_GABA_SYNTHESIS_RELEASE_REUPTAKE_AND_DEGRADATIO')
+down <- c('REACTOME_CREB1_PHOSPHORYLATION_THROUGH_NMDA_RECEPTOR_MEDIATED_ACTIVATION_OF_RAS_SIGNALING','REACTOME_RAS_ACTIVATION_UPON_CA2_INFLUX_THROUGH_NMDA_RECEPTOR','REACTOME_LONG_TERM_POTENTIATION','REACTOME_UNBLOCKING_OF_NMDA_RECEPTORS_GLUTAMATE_BINDING_AND_ACTIVATION','REACTOME_CLEC7A_DECTIN_1_INDUCES_NFAT_ACTIVATIO')
+TEST <- c(up,down)
+p <- allDiff
+p$ID <- rownames(p) 
+q <- p[TEST,]
+group1 <- c(rep("6",5),rep("3",5)) 
+df <- data.frame(ID = q$ID, score = q$t,group=group1 )
+# 按照score排序
+sortdf <- df[order(df$score),]
+sortdf$ID <- factor(sortdf$ID, levels = sortdf$ID)#增加通路ID那一列
+head(sortdf)
+p <- ggplot(sortdf, aes(ID, score,fill=group)) + geom_bar(stat = 'identity') + 
+                    coord_flip() + 
+                    theme_bw() + #去除背景色
+                    theme(panel.grid =element_blank())+
+                    theme(panel.border = element_rect(size = 0.6)) 
+pdf("gsva_dif.pdf",width=12,height=8)
+p
+dev.off()
+```
+
+```{r}
+library(ggplot2)
+library(clusterProfiler)
+library(org.Hs.eg.db) ##加载人类
+
+```
+
+```{r}
+library(Seurat)
+setwd("/home/wucheng/jianshu/function/data")
+pbmc <-readRDS("pbmc.rds")
+cluster5.markers <- FindMarkers(pbmc, ident.1 = 5, ident.2 = c(0, 3), min.pct = 0.25)  ##这儿选取C5和C0，C3簇比较，做差异分析，识别差异表达基因，可根据实际具体选择
+head(cluster5.markers, n = 5) 
+
+up <-rownames(cluster5.markers[intersect(which(cluster5.markers [,1]<0.05),which(cluster5.markers [,2]>=0.25)),])
+down <-rownames(cluster5.markers[intersect(which(cluster5.markers [,1]<0.05),which(cluster5.markers [,2]<=(-0.25))),])
+##识别up ，down genes
+gs = bitr(up, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+head(gs)
+ego.bp = enrichGO(gene=gs$ENTREZID, OrgDb = org.Hs.eg.db,ont= "BP",pAdjustMethod = "BH",pvalueCutoff= 0.05,qvalueCutoff= 0.2,readable= TRUE)                    
+head(ego.bp)
+write.csv(ego.bp, file ="Cluster5_up_go.csv") ##输出up 基因富集的Go term 
+pdf("Cluster5_up_go.pdf", height =5, width = 10)
+print(dotplot(ego.bp, showCategory=10,title="Cluster5 Vs.Cluster03 up gene GoTerm"))
+dev.off()
+kk <- enrichKEGG(gene= gs$ENTREZID, organism     = 'hsa',pvalueCutoff = 0.05)
+write.csv(kk,file ="Cluster5_up_kegg.csv") ##输出up 基因富集的Kegg term
+pdf("Cluster5_up_kegg.pdf", height =5, width = 10)
+print(dotplot(kk, showCategory=10,title="KEGG_Up_biological")) #展示前十个条目
+dev.off()
+
+gs = bitr(down, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+head(gs)
+ego.bp = enrichGO(gene=gs$ENTREZID, OrgDb = org.Hs.eg.db,ont= "BP",pAdjustMethod = "BH",pvalueCutoff= 0.05,qvalueCutoff= 0.2,readable= TRUE)                    
+head(ego.bp)
+write.csv(ego.bp, file ="Cluster5_down_go.csv") ##输出down 基因富集的Go term 
+pdf("Cluster5_down_go.pdf", height =5, width = 10)
+print(dotplot(ego.bp, showCategory=10,title="Cluster5Vs.Cluster03 down gene GoTerm"))
+dev.off()
+kk <- enrichKEGG(gene= gs$ENTREZID, organism     = 'hsa',pvalueCutoff = 0.05)
+write.csv(kk,file ="Cluster5_down_kegg.csv") ##输出down 基因富集的Kegg term 
+pdf("Cluster5_down_kegg.pdf", height =5, width = 10)
+print(dotplot(kk, showCategory=10,title="KEGG_biological")) 
+dev.off()
+```
+
+
+
+```{r}
+setwd("D:/OneDrive - International Campus, Zhejiang University/Projects/Lysosome-CART/")
+
+gc()
+memory.limit(10240000000)
+library(Seurat)
+library(SeuratObject)
+library(tidyverse)
+library(ggplot2)
+
+library(GSVA)
+library(ggplot2)
+library(dplyr)
+library(msigdbr)
+library(pheatmap)
+library(patchwork)
+
+data <- readRDS("CART_Patient_TSNE.rds")
+data <- AddMetaData(data, metadata = data@active.ident, col.name = "CellType")
+
+expr <- as.data.frame(data@assays$RNA@data) #表达矩阵
+meta <- data@meta.data[,c("orig.ident","CellType","method")] #类别
+m_df = msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:KEGG") #选取物种人类
+msigdbr_list = split(x = m_df$gene_symbol, f = m_df$gs_name)
+expr=as.matrix(expr) 
+kegg <- gsva(expr, msigdbr_list, kcdf="Gaussian",method = "gsva",parallel.sz=10) #gsva
+pheatmap(kegg, show_rownames=1, show_colnames=0, annotation_col=meta,fontsize_row=5, filename='gsva_heatmap.png', width=15, height=12)#绘制热图
+es <- data.frame(t(kegg),stringsAsFactors=F)  #添加到单细胞矩阵中，可视化相关通路的在umap上聚集情况，可理解为一个通路即一个基因
+
+data_gsva <- AddMetaData(data, es)
+
+saveRDS(data_gsva, file = "CART_GSVA.rds")
+```
+
+```{r}
+FeaturePlot(data_gsva, features = "KEGG_LYSOSOME", reduction = 'tsne')
+
+DotPlot(data_gsva, features = c("KEGG_LYSOSOME", "KEGG_REGULATION_OF_AUTOPHAGY"),group.by = "method", assay='RNA')  + coord_flip()
+```
+
+```{r}
+normalize <- function(x){return((x-min(x))/(max(x)-min(x)))}
+gsea_result <- normalize(es)
+
+data_gsva2 <- AddMetaData(data, gsea_result)
+
+FeaturePlot(data_gsva2, features = "KEGG_LYSOSOME", reduction = 'tsne')
+
+DotPlot(data_gsva2, features = c("KEGG_LYSOSOME", "KEGG_REGULATION_OF_AUTOPHAGY"),group.by = "method", assay='RNA')  + coord_flip()
+
+```
+```{r}
+setwd("D:/OneDrive - International Campus, Zhejiang University/Projects/Lysosome-CART/")
+data_gsva <- readRDS("CART_GSVA.rds")
+
+normalize <- function(x){return((x-min(x))/(max(x)-min(x)))}
+es <- data_gsva@meta.data
+es <- es[, 12:length(es)]
+es <- normalize(es)
+
+kegg <- t(es)
+
+library(pheatmap)
+meta <- data_gsva@meta.data[,c("orig.ident","CellType","method")] #类别
+pheatmap(kegg, show_rownames=1, show_colnames=0, annotation_col=meta,fontsize_row=5, filename='method_gsva_heatmap.png', width=15, height=12)#绘制热图
+
+data_gsva <- AddMetaData(data_gsva, es)
+```
+
+```{r}
+CD8T <- subset(data_gsva, idents = c("Exhausted CD8+ T", "Naive CD8+ T", "Effector Memory CD8+ T"))
+plot <- DotPlot(CD8T, features = c("KEGG_LYSOSOME", "KEGG_REGULATION_OF_AUTOPHAGY", "KEGG_JAK_STAT_SIGNALING_PATHWAY", "KEGG_T_CELL_RECEPTOR_SIGNALING_PATHWAY", "KEGG_MAPK_SIGNALING_PATHWAY", "KEGG_MTOR_SIGNALING_PATHWAY", "KEGG_P53_SIGNALING_PATHWAY"),
+                group.by = "CellType", assay = 'RNA') + coord_flip()
+plot
+# 保存图像文件
+name <- paste0("method_gsva_plot_CD8T1.png")
+ggsave(filename = name, plot, dpi = 300, width = 12, height = 8)
+```
+
+```{r}
+CD8T2 <- subset(data_gsva, idents = c("Naive CD8+ T"))
+plot <- DotPlot(CD8T2, features = c("KEGG_LYSOSOME", "KEGG_REGULATION_OF_AUTOPHAGY"),
+                group.by = "method", assay = 'RNA') + coord_flip()
+plot
+# 保存图像文件
+name <- paste0("method_gsva_heatmap_CD8T2.png")
+ggsave(filename = name, plot, dpi = 300, width = 12, height = 3)
+```
+
+```{r}
+CD8T3 <- subset(data_gsva, idents = c("Effector Memory CD8+ T"))
+plot <- VlnPlot(object = CD8T3, features = c("LAMP1", "LAMP2", "ATG5", "ATG12", "BECN1", "ATP6V0C"), group.by = "method", 
+        pt.size = 0.0001)
+plot
+# 保存图像文件
+name <- paste0("method_marker_CD8T3.png")
+ggsave(filename = name, plot, dpi = 300, width = 12, height = 6)
+```
+
+```{r}
+VlnPlot(object = data_gsva, features = c("FOXO1"), group.by = "CellType", 
+        pt.size = 0.0001)
+
+```
+```{r}
+VlnPlot(object = data_gsva, features = c("FOXO1"), group.by = "CellType", 
+        pt.size = 0)
+
+```
+
+```{r}
+DotPlot(object = data_gsva, features = c("FOXO1"), group.by = "CellType")
+
+```
+
+```{r}
+CD4T <- subset(data_gsva, idents = c("Naive CD4+ T"))
+plot <- DotPlot(CD4T, features = c("KEGG_LYSOSOME", "KEGG_REGULATION_OF_AUTOPHAGY"),
+                group.by = "method", assay = 'RNA') + coord_flip()
+plot
+# 保存图像文件
+name <- paste0("method_gsva_heatmap_CD4T.png")
+ggsave(filename = name, plot, dpi = 300, width = 12, height = 3)
+```
+
+```{r}
+plot <- DotPlot(data_gsva, features = c("KEGG_LYSOSOME", "KEGG_REGULATION_OF_AUTOPHAGY", "KEGG_JAK_STAT_SIGNALING_PATHWAY", "KEGG_T_CELL_RECEPTOR_SIGNALING_PATHWAY", "KEGG_MAPK_SIGNALING_PATHWAY", "KEGG_MTOR_SIGNALING_PATHWAY", "KEGG_P53_SIGNALING_PATHWAY"),
+                group.by = "CellType", assay = 'RNA') + coord_flip()
+plot
+# 保存图像文件
+name <- paste0("method_gsva_heatmap_T1.png")
+ggsave(filename = name, plot, dpi = 300, width = 20, height = 8)
+```
+```{r}
+plot <- VlnPlot(object = CD8T, features = c("KEGG_LYSOSOME", "KEGG_REGULATION_OF_AUTOPHAGY", "KEGG_JAK_STAT_SIGNALING_PATHWAY", "KEGG_T_CELL_RECEPTOR_SIGNALING_PATHWAY", "KEGG_MAPK_SIGNALING_PATHWAY", "KEGG_MTOR_SIGNALING_PATHWAY"), group.by = "CellType", pt.size = 0.0001)
+
+plot
+# 保存图像文件
+name <- paste0("method_gsva_2.png")
+ggsave(filename = name, plot, dpi = 300, width = 20, height = 8)
+```
