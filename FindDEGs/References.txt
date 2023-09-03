@@ -1,0 +1,8 @@
+Data source:
+https://spica.unil.ch/refs
+https://github.com/carmonalab/ProjecTILs
+
+Interpretation of T cell states from single-cell transcriptomics data using reference atlases
+https://www.nature.com/articles/s41467-021-23324-4
+
+Andreatta M, Corria-Osorio J, Müller S, Cubas R, Coukos G, Carmona SJ. Interpretation of T cell states from single-cell transcriptomics data using reference atlases. Nat Commun. 2021 May 20;12(1):2965. doi: 10.1038/s41467-021-23324-4. PMID: 34017005; PMCID: PMC8137700.
