@@ -51,7 +51,7 @@ FindDEGs <- function(GeneName, ProjecTIL_path){
    df_new = as.data.frame(df)
    writeDataTable(wb, sheet = i, x = df_new, colNames = TRUE, rowNames = TRUE)
   }
-  a <- gsub(pattern = "D:/OneDrive - International Campus, Zhejiang University/Dry_Lab/ProjectTIL/", replacement = "", x = ProjecTIL_path)
+  a <- gsub(pattern = "", replacement = "", x = ProjecTIL_path)
   b <- gsub(pattern = ".rds", replacement = "", x = a)
   filename <- paste0(b, "_DEseq2_", GeneName, ".xlsx")
   saveWorkbook(wb, filename)
@@ -89,6 +89,7 @@ FindDEGs <- function(GeneName, ProjecTIL_path){
     }
   }
   gene_matrix <- gene_matrix[rowSums(gene_matrix) > 2, ]
+  gene_matrix <- gene_matrix[!is.na(rownames(gene_matrix)), ]
   a <- gsub(pattern = ".xlsx", replacement = "", x = filename)
   filename2 <- paste0(a, "_UpsetR", ".csv")
   write.csv(gene_matrix, filename2)
@@ -103,7 +104,7 @@ FindDEGs <- function(GeneName, ProjecTIL_path){
   png(file = fig_name, res = 300, width = 1200, height = 960)
   print(upset_data)
   dev.off()
-  gene_list <- colnames(gene_matrix)
+  gene_list <- rownames(gene_matrix)
 
   library(scCustomize) 
   library(dittoSeq)

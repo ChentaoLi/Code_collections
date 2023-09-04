@@ -8,8 +8,6 @@ MCD8T_LCMV <- "ref_CD8_LCMV_mouse_v2.rds"
 MCD4T_LCMV <- "ref_LCMV_CD4_mouse_v1.rds"
 MCD8T_LCMV_v1 <- "ref_CD8_LCMV_mouse_v1.rds"
 
-GeneName <- "Ripk3"
-ProjecTIL_path <- MCD8T_LCMV
 FindDEGs <- function(GeneName, ProjecTIL_path){
   library(Seurat)
   library(SeuratObject)
@@ -69,13 +67,13 @@ FindDEGs <- function(GeneName, ProjecTIL_path){
   for (i in seq_along(results_list)) {
     df <- results_list[i][[1]]
     df$Gene <- rownames(df)
-    df <- df[!is.na(df$log2FoldChange) & !is.na(df$pvalue) & abs(df$log2FoldChange) > 0.5 & df$pvalue < 0.05, ]
+    df <- df[!is.na(df$logFC) & !is.na(df$P.Value) & abs(df$logFC) > 0.5 & df$P.Value < 0.05, ]
     sheet_name <- df_names[i]
     addWorksheet(wb, sheetName = sheet_name)
     df_new = as.data.frame(df)
     writeDataTable(wb, sheet = i, x = df_new, colNames = TRUE, rowNames = TRUE)
   }
-  a <- gsub(pattern = "D:/OneDrive - International Campus, Zhejiang University/Dry_Lab/ProjectTIL/", replacement = "", x = ProjecTIL_path)
+  a <- gsub(pattern = "", replacement = "", x = ProjecTIL_path)
   b <- gsub(pattern = ".rds", replacement = "", x = a)
   filename <- paste0(b, "_limma_", GeneName, ".xlsx")
   saveWorkbook(wb, filename)
@@ -113,6 +111,7 @@ FindDEGs <- function(GeneName, ProjecTIL_path){
     }
   }
   gene_matrix <- gene_matrix[rowSums(gene_matrix) > 2, ]
+  gene_matrix <- gene_matrix[!is.na(rownames(gene_matrix)), ]
   a <- gsub(pattern = ".xlsx", replacement = "", x = filename)
   filename2 <- paste0(a, "_UpsetR", ".csv")
   write.csv(gene_matrix, filename2)
@@ -127,7 +126,7 @@ FindDEGs <- function(GeneName, ProjecTIL_path){
   png(file = fig_name, res = 300, width = 1200, height = 960)
   print(upset_data)
   dev.off()
-  gene_list <- colnames(gene_matrix)
+  gene_list <- rownames(gene_matrix)
   
   library(scCustomize) 
   library(dittoSeq)
