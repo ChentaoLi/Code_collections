@@ -1,12 +1,12 @@
 # ProjecTIL
-HCD4T <- "CD4T_human_ref_v1.rds"
-HCD8T <- "CD8T_human_ref_v1.rds"
-MAPC <- "APC_atlas_v1_SPICA.rds"
-HDC <- "DC_human_ref_v1.rds"
-MTIL <- "ref_TILAtlas_mouse_v1.rds"
-MCD8T_LCMV <- "ref_CD8_LCMV_mouse_v2.rds"
-MCD4T_LCMV <- "ref_LCMV_CD4_mouse_v1.rds"
-MCD8T_LCMV_v1 <- "ref_CD8_LCMV_mouse_v1.rds"
+HCD4T <- "D:/OneDrive - International Campus, Zhejiang University/Dry_Lab/Code_collections/FindDEGs/CD4T_human_ref_v1.rds"
+HCD8T <- "D:/OneDrive - International Campus, Zhejiang University/Dry_Lab/Code_collections/FindDEGs/CD8T_human_ref_v1.rds"
+MAPC <- "D:/OneDrive - International Campus, Zhejiang University/Dry_Lab/Code_collections/FindDEGs/APC_atlas_v1_SPICA.rds"
+HDC <- "D:/OneDrive - International Campus, Zhejiang University/Dry_Lab/Code_collections/FindDEGs/DC_human_ref_v1.rds"
+MTIL <- "D:/OneDrive - International Campus, Zhejiang University/Dry_Lab/Code_collections/FindDEGs/ref_TILAtlas_mouse_v1.rds"
+MCD8T_LCMV <- "D:/OneDrive - International Campus, Zhejiang University/Dry_Lab/Code_collections/FindDEGs/ref_CD8_LCMV_mouse_v2.rds"
+MCD4T_LCMV <- "D:/OneDrive - International Campus, Zhejiang University/Dry_Lab/Code_collections/FindDEGs/ref_LCMV_CD4_mouse_v1.rds"
+MCD8T_LCMV_v1 <- "D:/OneDrive - International Campus, Zhejiang University/Dry_Lab/Code_collections/FindDEGs/ref_CD8_LCMV_mouse_v1.rds"
 
 FindDEGs <- function(GeneName, ProjecTIL_path){
   library(Seurat)
@@ -126,25 +126,7 @@ FindDEGs <- function(GeneName, ProjecTIL_path){
   png(file = fig_name, res = 300, width = 1200, height = 960)
   print(upset_data)
   dev.off()
-  gene_list <- rownames(gene_matrix)
-  
-  library(scCustomize) 
-  library(dittoSeq)
-  library(ggplot2)
-  fig_name <- paste0(a, "_vln", ".png")
-  png(file = fig_name, res = 300, width = 1200, height = 960)
-  VlnPlot(PROJECTIL, features = gene_list,
-          stack=T,pt.size=0,
-          flip = T,
-          add.noise = T,
-          split.by = 'GeneName_label',
-          split.plot = T)+#横纵轴不标记任何东西
-    theme(axis.text.y = element_blank(), #不显示坐标刻度
-          axis.ticks.y = element_blank(),
-          axis.title = element_blank(),
-          axis.text.x = element_text(colour = 'black',size = 10,angle = 45),
-          legend.position = 'top')
-  dev.off()
+  return(PROJECTIL)
 }
 
-# FindDEGs("Ripk3", MCD8T_LCMV)
+# PROJECTIL <- FindDEGs("Ripk3", MCD8T_LCMV)

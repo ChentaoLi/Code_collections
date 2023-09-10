@@ -99,29 +99,8 @@ FindDEGs <- function(GeneName, ProjecTIL_path){
                       mainbar.y.label = "Intersection Size", sets.x.label = "DEG counts", 
                       mb.ratio = c(0.4, 0.6),
                       set_size.show = TRUE)
-  
-  upset_data
   png(file = fig_name, res = 300, width = 1200, height = 960)
   print(upset_data)
-  dev.off()
-  gene_list <- rownames(gene_matrix)
-
-  library(scCustomize) 
-  library(dittoSeq)
-  library(ggplot2)
-  fig_name <- paste0(a, "_vln", ".png")
-  png(file = fig_name, res = 300, width = 1200, height = 960)
-  VlnPlot(PROJECTIL, features = gene_list,
-              stack=T,pt.size=0,
-              flip = T,
-              add.noise = T,
-              split.by = 'GeneName_label',
-              split.plot = T)+#横纵轴不标记任何东西
-  theme(axis.text.y = element_blank(), #不显示坐标刻度
-        axis.ticks.y = element_blank(),
-        axis.title = element_blank(),
-        axis.text.x = element_text(colour = 'black',size = 10,angle = 45),
-        legend.position = 'top')
   dev.off()
 }
 
