@@ -1,7 +1,7 @@
 # A shared code collection by Chentao Li
 
 > **Note**
-> Hello and welcome to this site. It contains some code I wrote or adapted from others for transcriptome/proteome and some other data analysis. Feel free to download and use them.
+> Hello and welcome to this website. It contains some codes I wrote or adapted from others for transcriptome/proteome data analysis. 
 > Please feel free to contact me if you have any suggestions or need help!
 
 ## Content
