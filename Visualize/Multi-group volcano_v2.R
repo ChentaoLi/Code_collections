@@ -35,8 +35,8 @@ createMultiVolcanoPlot <- function(result, output_pdf_path) {
       mutate(group = group)
   }, data_frames, group = 1:length(data_frames))
   
-  get_top_genes <- function(df, criterion = "log2FoldChange", n = 8) {
-    return(df[order(-df[[criterion]])[1:n], ])
+  get_top_genes <- function(df, criterion = "log2FoldChange", n = 10) {
+    return(df[order(-abs(df[[criterion]]))[1:n], ])
   }
   
   all_top_genes <- do.call(rbind, lapply(data_frames, get_top_genes))
