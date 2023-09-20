@@ -19,3 +19,8 @@ This has code written in it based on ProjecTILs atlas. This code has been built 
 
 ### Visualize
 The code in here is provided for visualizing.
+
+#### Multi-group volcano.R and V2
+The code can be sourced to plot DEGs in different groups. The V1 code is only for plotting 8 up-regulated genes, and the V2 is for 10 most significant changed ones. 
+
+

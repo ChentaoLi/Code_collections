@@ -2,3 +2,7 @@
 *.rds
 *.rdata
 *.gz
+IOBR/.Rhistory
+Pathway/.Rhistory
+FindDEGs/.Rhistory
+scRNA-seq/.Rhistory
